@@ -6,6 +6,7 @@ import { collectFacts } from "./facts";
 import { parseLogFile } from "./parser";
 import { Reducer } from "./reducer";
 import { loadRules, applyRules } from "./rules-engine";
+import { loadDbRules } from "@/lib/rules-registry";
 import { retrieveSolution } from "./retrieval";
 import { buildEvidencePack } from "./evidence";
 import { analyzeWithLlm } from "./llm";
@@ -135,7 +136,10 @@ export async function stageParse(
 export async function stageRules(
   parse: ParseCheckpoint,
 ): Promise<RulesCheckpoint> {
-  const rules = await loadRules();
+  // DB rules first so user-defined rules take precedence over built-ins
+  // (matches() returns the first matching rule).
+  const [builtIn, dbRules] = await Promise.all([loadRules(), loadDbRules()]);
+  const rules = [...dbRules, ...builtIn];
   const { problems: detected, noiseLineCount } = applyRules(
     parse.signatures,
     rules,

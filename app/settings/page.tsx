@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Eye, EyeOff, Loader2, Plus, Trash2 } from "lucide-react";
 import { Badge, Button, Card } from "@/components/ui";
+import { RulesRegistry } from "@/components/rules-registry";
 import { apiPath } from "@/lib/utils";
 
 interface Oem {
@@ -82,6 +83,8 @@ export default function SettingsPage() {
           <Loader2 className="h-4 w-4 animate-spin" /> Загрузка…
         </Card>
       )}
+
+      <RulesRegistry />
 
       <OemRegistry />
     </div>

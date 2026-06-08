@@ -70,3 +70,31 @@ export const appSettings = pgTable("app_settings", {
 });
 
 export type AppSettingsRow = typeof appSettings.$inferSelect;
+
+// Knowledge-base rules stored in the DB (in addition to the built-in YAML base).
+// Editable via the UI and grown over time, including "save as rule" capture from
+// analysis findings — this is what makes the analyzer learnable.
+export const rules = pgTable("rules", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  // Logical key used as the rule id by the engine (slug, unique).
+  key: text("key").notNull(),
+  severity: text("severity").notNull().default("warning"),
+  subsystem: text("subsystem").notNull().default("other"),
+  title: text("title").notNull(),
+  matchComponent: text("match_component"),
+  matchAnyOf: jsonb("match_any_of").$type<string[]>().notNull().default([]),
+  matchAllOf: jsonb("match_all_of").$type<string[]>().notNull().default([]),
+  freqMinPerMinute: integer("freq_min_per_minute"),
+  cause: text("cause"),
+  solution: jsonb("solution").$type<string[]>().notNull().default([]),
+  appliesTo: jsonb("applies_to").$type<string[]>().notNull().default([]),
+  retrievalQuery: text("retrieval_query"),
+  enabled: integer("enabled").notNull().default(1),
+  // manual | captured (from an analysis finding)
+  source: text("source").notNull().default("manual"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type RuleRow = typeof rules.$inferSelect;
+export type NewRuleRow = typeof rules.$inferInsert;

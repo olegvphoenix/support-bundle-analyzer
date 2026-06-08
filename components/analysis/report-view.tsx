@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import {
   Activity,
   AlertTriangle,
+  BookmarkPlus,
   Check,
   CheckCircle2,
   Clock,
@@ -16,6 +17,7 @@ import {
   HardDrive,
   KeyRound,
   ListTree,
+  Loader2,
   Network,
   ScanEye,
   Video,
@@ -37,6 +39,12 @@ import {
   SeverityBadge,
   SEVERITY_META,
 } from "@/components/ui";
+import {
+  RuleFormFields,
+  emptyRuleForm,
+  formToPayload,
+  type RuleForm,
+} from "@/components/rules-registry";
 import { apiPath, formatTs } from "@/lib/utils";
 
 type Tab = "problems" | "timeline";
@@ -427,6 +435,7 @@ function ProblemSheet({
   onClose: () => void;
 }) {
   const [copied, setCopied] = useState(false);
+  const [showRule, setShowRule] = useState(false);
   const jiraSource = problem.sources.find((s) => s.kind === "jira" && s.url);
 
   const copySolution = async () => {
@@ -483,6 +492,9 @@ function ProblemSheet({
               </Button>
             </a>
           )}
+          <Button size="sm" variant="outline" onClick={() => setShowRule(true)}>
+            <BookmarkPlus className="h-4 w-4" /> Сохранить как правило
+          </Button>
         </div>
 
         <div className="mt-6 space-y-6">
@@ -543,6 +555,95 @@ function ProblemSheet({
               ))}
             </div>
           </Section>
+        </div>
+      </div>
+
+      {showRule && (
+        <SaveAsRuleModal problem={problem} onClose={() => setShowRule(false)} />
+      )}
+    </div>
+  );
+}
+
+function problemToRuleForm(problem: ReportProblem): RuleForm {
+  const base = emptyRuleForm();
+  return {
+    ...base,
+    title: problem.title,
+    severity: problem.severity,
+    subsystem: problem.subsystem,
+    matchComponent: problem.component ?? "",
+    // Seed with the title as a starting phrase; the user refines it into a
+    // stable substring that will reliably match future occurrences.
+    matchAnyOf: problem.title,
+    freqMinPerMinute: problem.storm ? "30" : "",
+    cause: problem.rootCause ?? "",
+    solution: problem.solution.join("\n"),
+    retrievalQuery: problem.title,
+  };
+}
+
+function SaveAsRuleModal({
+  problem,
+  onClose,
+}: {
+  problem: ReportProblem;
+  onClose: () => void;
+}) {
+  const [form, setForm] = useState<RuleForm>(() => problemToRuleForm(problem));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  const save = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch(apiPath("/api/rules"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(formToPayload(form, "captured")),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error ?? "Не удалось сохранить");
+      }
+      setSaved(true);
+      setTimeout(onClose, 900);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] flex justify-end">
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="relative h-full w-full max-w-xl overflow-y-auto border-l border-[var(--border)] bg-[var(--surface)] p-6 shadow-2xl">
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-semibold">Сохранить как правило</h3>
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+        <p className="mt-1 text-sm text-[var(--muted)]">
+          Уточните условие срабатывания (фразу из логов), чтобы правило надёжно
+          ловило такие случаи в будущем.
+        </p>
+        <div className="mt-4">
+          <RuleFormFields form={form} setForm={setForm} />
+        </div>
+        <div className="mt-5 flex items-center justify-end gap-3">
+          {error && <span className="text-sm text-[var(--sev-critical)]">{error}</span>}
+          {saved && <span className="text-sm text-[var(--sev-ok)]">Сохранено</span>}
+          <Button variant="outline" onClick={onClose}>
+            Отмена
+          </Button>
+          <Button onClick={save} disabled={!form.title || saving}>
+            {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+            Сохранить правило
+          </Button>
         </div>
       </div>
     </div>
