@@ -69,8 +69,8 @@ export default function SettingsPage() {
   });
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-3xl font-bold">Настройки</h1>
+    <div className="space-y-4">
+      <h1 className="text-2xl font-bold">Настройки</h1>
 
       {settings ? (
         <SettingsForm
@@ -139,7 +139,7 @@ function SettingsForm({
   return (
     <>
       <SectionCard title="LLM">
-        <div className="grid gap-4 sm:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-3">
           <Field label="Провайдер">
             <select
               className="input"
@@ -200,7 +200,7 @@ function SettingsForm({
       </SectionCard>
 
       <SectionCard title="RAG (Lexiro)">
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Базовый URL">
             <input
               className="input"
@@ -257,7 +257,7 @@ function SettingsForm({
       </SectionCard>
 
       <SectionCard title="Хранилище">
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Field label="MinIO endpoint">
             <input
               className="input"
@@ -325,8 +325,8 @@ function SectionCard({
   children: React.ReactNode;
 }) {
   return (
-    <Card className="space-y-4 p-6">
-      <h2 className="text-lg font-semibold">{title}</h2>
+    <Card className="space-y-3 p-5">
+      <h2 className="text-base font-semibold">{title}</h2>
       {children}
     </Card>
   );
