@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Uppy from "@uppy/core";
 import Tus from "@uppy/tus";
 import Dashboard from "@uppy/dashboard";
+import ru_RU from "@uppy/locales/lib/ru_RU";
 import "@uppy/core/dist/style.min.css";
 import "@uppy/dashboard/dist/style.min.css";
 import { apiPath } from "@/lib/utils";
@@ -29,6 +30,14 @@ export function UploadPanel() {
 
     const uppy = new Uppy({
       autoProceed: true,
+      locale: {
+        ...ru_RU,
+        strings: {
+          ...ru_RU.strings,
+          dropPasteFiles: "Перетащите .7z архив сюда или %{browseFiles}",
+          browseFiles: "выберите файл",
+        },
+      },
       restrictions: {
         maxNumberOfFiles: 1,
         allowedFileTypes: [".7z", ".zip", ".tar", ".gz", ".tgz"],
@@ -46,7 +55,7 @@ export function UploadPanel() {
         height: 320,
         proudlyDisplayPoweredByUppy: false,
         theme: "dark",
-        note: "Поддерживаются архивы .7z / .zip до нескольких ГБ. Загрузка возобновляемая.",
+        note: "до нескольких ГБ, докачка при разрыве",
       });
 
     const onComplete = async (result: {

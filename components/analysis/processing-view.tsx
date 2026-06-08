@@ -13,11 +13,11 @@ interface StatusEvent {
 }
 
 const STEPS = [
-  { label: "Загрузка и распаковка", end: 18 },
+  { label: "Распаковка", end: 18 },
   { label: "Парсинг логов", end: 57 },
-  { label: "Свёртка и правила", end: 69 },
-  { label: "База знаний и ИИ", end: 91 },
-  { label: "Формирование отчёта", end: 100 },
+  { label: "Правила", end: 69 },
+  { label: "Ретривал (Lexiro)", end: 80 },
+  { label: "LLM-анализ", end: 100 },
 ];
 
 export function ProcessingView({ id, onDone }: { id: string; onDone: () => void }) {
@@ -72,44 +72,66 @@ export function ProcessingView({ id, onDone }: { id: string; onDone: () => void 
         </div>
       </div>
 
-      <ol className="space-y-3">
+      <div className="flex items-start justify-between gap-2">
         {STEPS.map((s, i) => {
           const isDone = done || i < currentStep;
           const isCurrent = !done && i === currentStep;
+          const status = isDone ? "Завершено" : isCurrent ? `${state.progress}%` : "Ожидание";
+          const color = isDone
+            ? "var(--sev-ok)"
+            : isCurrent
+              ? "var(--primary)"
+              : "var(--muted)";
           return (
-            <li key={s.label} className="flex items-center gap-3">
-              <span
-                className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-xs"
-                style={{
-                  background: isDone
-                    ? "var(--sev-ok)"
-                    : isCurrent
-                      ? "var(--primary)"
-                      : "var(--surface-2)",
-                  color: isDone || isCurrent ? "#fff" : "var(--muted)",
-                }}
-              >
-                {isDone ? (
-                  <Check className="h-3.5 w-3.5" />
-                ) : isCurrent ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  i + 1
-                )}
-              </span>
-              <span
-                className="text-sm"
-                style={{
-                  color: isDone || isCurrent ? "var(--foreground)" : "var(--muted)",
-                  fontWeight: isCurrent ? 600 : 400,
-                }}
+            <div key={s.label} className="flex flex-1 flex-col items-center text-center">
+              <div className="flex w-full items-center">
+                <span
+                  className="h-0.5 flex-1"
+                  style={{
+                    background: i === 0 ? "transparent" : i <= currentStep || done ? "var(--sev-ok)" : "var(--border)",
+                  }}
+                />
+                <span
+                  className="grid h-8 w-8 shrink-0 place-items-center rounded-full border-2"
+                  style={{
+                    borderColor: isDone || isCurrent ? color : "var(--border)",
+                    background: isDone ? "var(--sev-ok)" : "var(--surface)",
+                    color: isDone ? "#fff" : color,
+                  }}
+                >
+                  {isDone ? (
+                    <Check className="h-4 w-4" />
+                  ) : isCurrent ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <span className="h-2 w-2 rounded-full bg-[var(--muted)]" />
+                  )}
+                </span>
+                <span
+                  className="h-0.5 flex-1"
+                  style={{
+                    background:
+                      i === STEPS.length - 1
+                        ? "transparent"
+                        : i < currentStep || done
+                          ? "var(--sev-ok)"
+                          : "var(--border)",
+                  }}
+                />
+              </div>
+              <div
+                className="mt-2 text-xs font-medium"
+                style={{ color: isDone || isCurrent ? "var(--foreground)" : "var(--muted)" }}
               >
                 {s.label}
-              </span>
-            </li>
+              </div>
+              <div className="text-xs" style={{ color }}>
+                {status}
+              </div>
+            </div>
           );
         })}
-      </ol>
+      </div>
     </Card>
   );
 }

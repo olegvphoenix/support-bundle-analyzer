@@ -26,6 +26,7 @@
     "@tus/server": "^1.10.0",
     "@uppy/core": "^4.4.0",
     "@uppy/dashboard": "^4.3.0",
+    "@uppy/locales": "^5.1.1",
     "@uppy/tus": "^4.2.0",
     "7zip-bin": "^5.2.0",
     "ai": "^4.1.0",
