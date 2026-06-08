@@ -13,6 +13,7 @@ const nextConfig: NextConfig = {
     "@tus/s3-store",
     "@tus/file-store",
     "pg",
+    "@modelcontextprotocol/sdk",
   ],
   experimental: {
     serverActions: {

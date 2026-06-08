@@ -128,6 +128,7 @@ export async function runPipeline(
       profile,
       p.evidence[0]?.sampleMessage,
       ragSettings,
+      { subsystem: p.subsystem },
     );
     if (r) retrievals.set(p.retrievalQuery, r);
   }

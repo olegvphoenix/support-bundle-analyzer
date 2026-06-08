@@ -164,12 +164,12 @@ function SettingsForm({
             onChange={(v) => setForm({ ...form, ragEnabled: v })}
           />
           <div />
-          <Field label="URL Lexiro API">
+          <Field label="URL Lexiro (MCP-эндпоинт)">
             <input
               className="input"
               value={form.ragUrl}
               onChange={(e) => setForm({ ...form, ragUrl: e.target.value })}
-              placeholder="https://host/api"
+              placeholder="https://lexiro.io/mcp/"
             />
           </Field>
           <Field label="API-ключ Lexiro">
