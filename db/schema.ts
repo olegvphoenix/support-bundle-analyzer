@@ -55,3 +55,14 @@ export const oemProfiles = pgTable("oem_profiles", {
 
 export type OemProfile = typeof oemProfiles.$inferSelect;
 export type NewOemProfile = typeof oemProfiles.$inferInsert;
+
+// Application settings — a single JSON document (id = 1). Editable via the
+// Settings UI; the pipeline/worker read it with env-var fallback so the box
+// still works before anything is configured in the UI.
+export const appSettings = pgTable("app_settings", {
+  id: integer("id").primaryKey().default(1),
+  data: jsonb("data").$type<Record<string, unknown>>().notNull().default({}),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type AppSettingsRow = typeof appSettings.$inferSelect;

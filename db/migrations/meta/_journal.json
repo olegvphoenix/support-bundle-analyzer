@@ -8,6 +8,13 @@
       "when": 1780909110304,
       "tag": "0000_long_gorilla_man",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1780916587929,
+      "tag": "0001_jazzy_moon_knight",
+      "breakpoints": true
     }
   ]
 }

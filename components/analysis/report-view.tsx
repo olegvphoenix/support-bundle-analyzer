@@ -1,18 +1,34 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
+  Activity,
   AlertTriangle,
+  Check,
+  CheckCircle2,
+  Clock,
+  Copy,
+  Cpu,
+  Database,
   Download,
+  ExternalLink,
   FileText,
   HardDrive,
   KeyRound,
+  ListTree,
   Network,
+  ScanEye,
+  Video,
   X,
   Zap,
-  ExternalLink,
 } from "lucide-react";
-import type { AnalysisReport, ReportProblem } from "@/lib/analyzer/types";
+import type {
+  AnalysisReport,
+  ReportProblem,
+  Severity,
+  Subsystem,
+  TimelineEvent,
+} from "@/lib/analyzer/types";
 import {
   Badge,
   Button,
@@ -21,39 +37,76 @@ import {
   SeverityBadge,
   SEVERITY_META,
 } from "@/components/ui";
-import { apiPath } from "@/lib/utils";
+import { apiPath, formatTs } from "@/lib/utils";
+
+type Tab = "problems" | "timeline";
 
 export function ReportView({ id, report }: { id: string; report: AnalysisReport }) {
   const [active, setActive] = useState<ReportProblem | null>(null);
+  const [tab, setTab] = useState<Tab>("problems");
 
   return (
     <div className="space-y-6">
       <HeaderCard report={report} id={id} />
       <StatsRow report={report} />
+      <SubsystemTiles report={report} />
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--muted)]">
-            Проблемы ({report.problems.length})
-          </h2>
-          {report.problems.length === 0 && (
-            <Card className="text-sm text-[var(--muted)]">
-              Критичных проблем не обнаружено.
-            </Card>
+          <div className="flex items-center gap-1 border-b border-[var(--border)]">
+            <TabButton active={tab === "problems"} onClick={() => setTab("problems")}>
+              Проблемы ({report.problems.length})
+            </TabButton>
+            <TabButton active={tab === "timeline"} onClick={() => setTab("timeline")}>
+              <ListTree className="h-3.5 w-3.5" /> Таймлайн ({report.timeline.length})
+            </TabButton>
+          </div>
+
+          {tab === "problems" ? (
+            report.problems.length === 0 ? (
+              <HealthyState />
+            ) : (
+              report.problems.map((p) => (
+                <ProblemCard key={p.id} problem={p} onClick={() => setActive(p)} />
+              ))
+            )
+          ) : (
+            <TimelinePanel events={report.timeline} />
           )}
-          {report.problems.map((p) => (
-            <ProblemCard key={p.id} problem={p} onClick={() => setActive(p)} />
-          ))}
         </div>
 
         <div className="space-y-6">
           <FactsCard report={report} />
-          <NoisePanel report={report} />
         </div>
       </div>
 
+      <NoiseBand report={report} />
+
       {active && <ProblemSheet problem={active} onClose={() => setActive(null)} />}
     </div>
+  );
+}
+
+function TabButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="-mb-px inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors"
+      style={{
+        borderColor: active ? "var(--primary)" : "transparent",
+        color: active ? "var(--foreground)" : "var(--muted)",
+      }}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -110,6 +163,76 @@ function StatsRow({ report }: { report: AnalysisReport }) {
   );
 }
 
+const SUBSYSTEMS: { key: Subsystem; label: string; icon: typeof KeyRound }[] = [
+  { key: "license", label: "Лицензия", icon: KeyRound },
+  { key: "cameras", label: "Камеры", icon: Video },
+  { key: "archive", label: "Архив", icon: Database },
+  { key: "detectors", label: "Детекторы", icon: ScanEye },
+  { key: "network", label: "Сеть", icon: Network },
+  { key: "hardware", label: "Оборудование", icon: Cpu },
+];
+
+const SEV_RANK: Record<Severity, number> = { critical: 0, warning: 1, info: 2, noise: 3 };
+
+function SubsystemTiles({ report }: { report: AnalysisReport }) {
+  const map = useMemo(() => {
+    const m = new Map<Subsystem, { worst: Severity | null; count: number }>();
+    for (const p of report.problems) {
+      const cur = m.get(p.subsystem) ?? { worst: null, count: 0 };
+      cur.count += 1;
+      if (cur.worst == null || SEV_RANK[p.severity] < SEV_RANK[cur.worst]) {
+        cur.worst = p.severity;
+      }
+      m.set(p.subsystem, cur);
+    }
+    // Hard fact: missing license dongle escalates the license tile.
+    if (!report.facts.licenseDongleFound) {
+      const cur = m.get("license") ?? { worst: null, count: 0 };
+      if (cur.worst == null || SEV_RANK["critical"] < SEV_RANK[cur.worst]) cur.worst = "critical";
+      m.set("license", cur);
+    }
+    return m;
+  }, [report]);
+
+  return (
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+      {SUBSYSTEMS.map(({ key, label, icon: Icon }) => {
+        const info = map.get(key);
+        const sev = info?.worst ?? null;
+        const color = sev ? SEVERITY_META[sev].color : "var(--sev-ok)";
+        const status = sev ? SEVERITY_META[sev].label : "В норме";
+        return (
+          <Card key={key} className="flex flex-col gap-2 py-4">
+            <div className="flex items-center justify-between">
+              <Icon className="h-5 w-5 text-[var(--muted)]" />
+              <span className="h-2.5 w-2.5 rounded-full" style={{ background: color }} />
+            </div>
+            <div className="text-sm font-medium">{label}</div>
+            <div className="text-xs" style={{ color }}>
+              {status}
+              {info?.count ? ` · ${info.count}` : ""}
+            </div>
+          </Card>
+        );
+      })}
+    </div>
+  );
+}
+
+function HealthyState() {
+  return (
+    <Card className="flex flex-col items-center gap-3 py-16 text-center">
+      <div className="grid h-16 w-16 place-items-center rounded-full bg-[rgba(34,197,94,0.12)]">
+        <CheckCircle2 className="h-9 w-9 text-[var(--sev-ok)]" />
+      </div>
+      <div className="text-lg font-semibold">Критичных проблем не обнаружено</div>
+      <div className="max-w-sm text-sm text-[var(--muted)]">
+        В логах преимущественно фоновый шум. Подавленные сообщения см. ниже.
+      </div>
+    </Card>
+  );
+}
+
 function ProblemCard({
   problem,
   onClick,
@@ -119,14 +242,17 @@ function ProblemCard({
 }) {
   const m = SEVERITY_META[problem.severity];
   return (
-    <button
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
-      className="w-full rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface)] p-4 text-left transition-colors hover:bg-[var(--surface-2)]"
+      onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && onClick()}
+      className="w-full cursor-pointer rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface)] p-4 text-left transition-colors hover:bg-[var(--surface-2)]"
       style={{ borderLeft: `3px solid ${m.color}` }}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="space-y-1">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <SeverityBadge severity={problem.severity} />
             {problem.storm && (
               <span className="inline-flex items-center gap-1 text-xs text-[var(--sev-warning)]">
@@ -134,6 +260,7 @@ function ProblemCard({
               </span>
             )}
             <Badge>{problem.subsystem}</Badge>
+            <Badge>уверенность {Math.round(problem.confidence * 100)}%</Badge>
           </div>
           <div className="font-medium">{problem.title}</div>
           {problem.rootCause && (
@@ -141,6 +268,18 @@ function ProblemCard({
               {problem.rootCause}
             </div>
           )}
+          <div className="flex items-center gap-3 pt-1 text-xs text-[var(--muted)]">
+            {problem.component && (
+              <span className="inline-flex items-center gap-1">
+                <Activity className="h-3 w-3" /> {problem.component}
+              </span>
+            )}
+            {problem.lastTs && (
+              <span className="inline-flex items-center gap-1">
+                <Clock className="h-3 w-3" /> {formatTs(problem.lastTs, true)}
+              </span>
+            )}
+          </div>
         </div>
         <div className="shrink-0 text-right">
           <div className="text-lg font-semibold">
@@ -149,16 +288,47 @@ function ProblemCard({
           <div className="text-xs text-[var(--muted)]">повторов</div>
         </div>
       </div>
-    </button>
+    </div>
   );
 }
 
-const SUBSYSTEM_ICON: Record<string, typeof KeyRound> = {
-  license: KeyRound,
-  network: Network,
-  hardware: HardDrive,
-  archive: HardDrive,
-};
+function TimelinePanel({ events }: { events: TimelineEvent[] }) {
+  if (!events.length) {
+    return (
+      <Card className="text-sm text-[var(--muted)]">
+        Недостаточно временных меток для построения таймлайна.
+      </Card>
+    );
+  }
+  return (
+    <Card className="space-y-0 p-0">
+      <ol className="relative ml-4 border-l border-[var(--border)]">
+        {events.map((e, i) => {
+          const color = SEVERITY_META[e.severity].color;
+          return (
+            <li key={i} className="relative py-3 pl-6 pr-4">
+              <span
+                className="absolute -left-[7px] top-4 h-3 w-3 rounded-full ring-4 ring-[var(--surface)]"
+                style={{ background: color }}
+              />
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-xs text-[var(--muted)]">
+                    {formatTs(e.ts, true)}
+                  </span>
+                  <SeverityBadge severity={e.severity} />
+                  {e.storm && <Zap className="h-3 w-3 text-[var(--sev-warning)]" />}
+                </div>
+                <span className="text-xs text-[var(--muted)]">×{e.count.toLocaleString("ru-RU")}</span>
+              </div>
+              <div className="pt-1 text-sm">{e.title}</div>
+            </li>
+          );
+        })}
+      </ol>
+    </Card>
+  );
+}
 
 function FactsCard({ report }: { report: AnalysisReport }) {
   const f = report.facts;
@@ -215,21 +385,36 @@ function Row({
   );
 }
 
-function NoisePanel({ report }: { report: AnalysisReport }) {
+function NoiseBand({ report }: { report: AnalysisReport }) {
+  const [open, setOpen] = useState(false);
   if (!report.noise.length) return null;
+  const shown = open ? report.noise : report.noise.slice(0, 4);
   return (
-    <Card className="space-y-2">
-      <h3 className="text-sm font-semibold text-[var(--muted)]">
-        Подавленный шум ({report.noise.length})
-      </h3>
-      {report.noise.map((n, i) => (
-        <div key={i} className="flex items-center justify-between text-sm">
-          <span className="line-clamp-1 text-[var(--muted)]">{n.title}</span>
-          <span className="shrink-0 text-[var(--sev-noise)]">
-            ×{n.count.toLocaleString("ru-RU")}
-          </span>
-        </div>
-      ))}
+    <Card className="space-y-3">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between"
+      >
+        <h3 className="text-sm font-semibold text-[var(--muted)]">
+          Подавленный шум ({report.noise.length})
+        </h3>
+        <span className="text-xs text-[var(--primary)]">
+          {open ? "свернуть" : "показать все"}
+        </span>
+      </button>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {shown.map((n, i) => (
+          <div
+            key={i}
+            className="flex items-center justify-between gap-2 rounded-lg bg-[var(--surface-2)] px-3 py-2 text-sm"
+          >
+            <span className="line-clamp-1 text-[var(--muted)]">{n.title}</span>
+            <span className="shrink-0 text-[var(--sev-noise)]">
+              ×{n.count.toLocaleString("ru-RU")}
+            </span>
+          </div>
+        ))}
+      </div>
     </Card>
   );
 }
@@ -241,13 +426,27 @@ function ProblemSheet({
   problem: ReportProblem;
   onClose: () => void;
 }) {
+  const [copied, setCopied] = useState(false);
+  const jiraSource = problem.sources.find((s) => s.kind === "jira" && s.url);
+
+  const copySolution = async () => {
+    const text = [problem.title, "", ...problem.solution.map((s, i) => `${i + 1}. ${s}`)].join("\n");
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard unavailable */
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
       <div className="relative h-full w-full max-w-xl overflow-y-auto border-l border-[var(--border)] bg-[var(--surface)] p-6 shadow-2xl">
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-2">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <SeverityBadge severity={problem.severity} />
               <Badge>{problem.subsystem}</Badge>
               <Badge>уверенность {Math.round(problem.confidence * 100)}%</Badge>
@@ -257,6 +456,33 @@ function ProblemSheet({
           <Button variant="ghost" size="sm" onClick={onClose}>
             <X className="h-4 w-4" />
           </Button>
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Badge>Повторов: {problem.count.toLocaleString("ru-RU")}</Badge>
+          {problem.component && <Badge>Компонент: {problem.component}</Badge>}
+          {problem.storm && (
+            <Badge className="text-[var(--sev-warning)]">
+              <Zap className="h-3 w-3" /> шторм
+            </Badge>
+          )}
+          {problem.lastTs && <Badge>Последнее: {formatTs(problem.lastTs, true)}</Badge>}
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          {problem.solution.length > 0 && (
+            <Button size="sm" variant="outline" onClick={copySolution}>
+              {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+              {copied ? "Скопировано" : "Скопировать решение"}
+            </Button>
+          )}
+          {jiraSource && (
+            <a href={jiraSource.url ?? "#"} target="_blank" rel="noreferrer">
+              <Button size="sm" variant="outline">
+                <ExternalLink className="h-4 w-4" /> Открыть в Jira
+              </Button>
+            </a>
+          )}
         </div>
 
         <div className="mt-6 space-y-6">

@@ -32,13 +32,21 @@ function mapSourceKind(t: LexiroDocument["source_type"]): RetrievedSource["kind"
   return t === "web" || t === "confluence" ? "doc" : "jira";
 }
 
+export interface RagSettings {
+  enabled: boolean;
+  url: string | null;
+  apiKey: string | null;
+}
+
 export async function retrieveSolution(
   query: string,
   profile: BundleProfile,
   contextHint?: string,
+  settings?: RagSettings,
 ): Promise<RetrievalResult | null> {
-  const base = process.env.LEXIRO_API_URL;
-  const key = process.env.LEXIRO_API_KEY;
+  if (settings && !settings.enabled) return null;
+  const base = settings?.url ?? process.env.LEXIRO_API_URL ?? null;
+  const key = settings?.apiKey ?? process.env.LEXIRO_API_KEY ?? null;
   if (!base) return null;
 
   const cacheKey = `${query}|${profile.version}`;

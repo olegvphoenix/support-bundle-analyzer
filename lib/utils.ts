@@ -13,6 +13,16 @@ export function apiPath(path: string): string {
   return `${BASE_PATH}${path}`;
 }
 
+// Log timestamps look like "2026-05-07 15:48:27.155". Render a compact local form.
+export function formatTs(ts: string | null, withDate = false): string {
+  if (!ts) return "—";
+  const d = new Date(ts.replace(" ", "T"));
+  if (isNaN(d.getTime())) return ts;
+  const time = d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+  if (!withDate) return time;
+  return `${d.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" })} ${time}`;
+}
+
 export function formatBytes(bytes: number): string {
   if (!bytes) return "0 B";
   const units = ["B", "KB", "MB", "GB", "TB"];

@@ -18,13 +18,30 @@ import type {
   ReportProblem,
   RetrievalResult,
   Severity,
+  TimelineEvent,
 } from "./types";
 
 export type ProgressFn = (stage: string, pct: number) => void;
 
+export interface PipelineSettings {
+  llmModel?: string;
+  llmApiKey?: string | null;
+  ragEnabled?: boolean;
+  ragUrl?: string | null;
+  ragApiKey?: string | null;
+  maskPii?: boolean;
+}
+
 export interface PipelineOptions {
   // Dynamic OEM registry; when omitted, built-in defaults + auto-detect apply.
   oemEntries?: OemEntry[];
+  // Runtime settings (LLM/RAG/privacy). When omitted, env vars are used.
+  settings?: PipelineSettings;
+}
+
+// A no-op redactor used when PII masking is disabled in settings.
+function identityRedactor() {
+  return { redact: (t: string) => t, mappingSize: 0 };
 }
 
 const SEVERITY_RANK: Record<Severity, number> = {
@@ -96,22 +113,34 @@ export async function runPipeline(
   );
 
   // RAG retrieval for non-noise problems (best-effort, only if configured).
+  const settings = opts.settings;
+  const ragSettings = settings
+    ? { enabled: settings.ragEnabled ?? true, url: settings.ragUrl ?? null, apiKey: settings.ragApiKey ?? null }
+    : undefined;
   progress("Поиск решений в базе знаний", 70);
   const retrievals = new Map<string, RetrievalResult>();
   const ragTargets = detected
     .filter((p) => p.severity !== "noise")
     .slice(0, 6);
   for (const p of ragTargets) {
-    const r = await retrieveSolution(p.retrievalQuery, profile, p.evidence[0]?.sampleMessage);
+    const r = await retrieveSolution(
+      p.retrievalQuery,
+      profile,
+      p.evidence[0]?.sampleMessage,
+      ragSettings,
+    );
     if (r) retrievals.set(p.retrievalQuery, r);
   }
 
   progress("Анализ ИИ", 80);
   const pack = buildEvidencePack(profile, facts, detected, retrievals);
-  const llm = await analyzeWithLlm(pack);
+  const llm = await analyzeWithLlm(
+    pack,
+    settings ? { model: settings.llmModel ?? "gemini-1.5-pro", apiKey: settings.llmApiKey ?? null } : undefined,
+  );
 
   progress("Формирование отчёта", 92);
-  const redactor = createRedactor();
+  const redactor = settings && settings.maskPii === false ? identityRedactor() : createRedactor();
   const noise: NoiseItem[] = detected
     .filter((p) => p.severity === "noise")
     .map((p) => ({ title: p.title, count: p.count, ruleId: p.ruleId }));
@@ -148,6 +177,9 @@ export async function runPipeline(
         storm: refs.some((r) => r.storm),
         confidence: lp.confidence,
         ruleId: primary?.ruleId ?? null,
+        component: componentOf(refs),
+        firstTs: tsRange(refs).first,
+        lastTs: tsRange(refs).last,
         sampleMessages: refs
           .flatMap((r) => r.evidence.slice(0, 1))
           .map((e) => redactor.redact(e.sampleMessage).slice(0, 400)),
@@ -173,6 +205,9 @@ export async function runPipeline(
         storm: p.storm,
         confidence: p.ruleId ? 0.8 : 0.4,
         ruleId: p.ruleId,
+        component: componentOf([p]),
+        firstTs: tsRange([p]).first,
+        lastTs: tsRange([p]).last,
         sampleMessages: p.evidence
           .slice(0, 2)
           .map((e) => redactor.redact(e.sampleMessage).slice(0, 400)),
@@ -187,6 +222,18 @@ export async function runPipeline(
       SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity] || b.count - a.count,
   );
 
+  const timeline: TimelineEvent[] = problems
+    .filter((p) => p.firstTs)
+    .map((p) => ({
+      ts: p.firstTs,
+      severity: p.severity,
+      subsystem: p.subsystem,
+      title: p.title,
+      count: p.count,
+      storm: p.storm,
+    }))
+    .sort((a, b) => (a.ts ?? "").localeCompare(b.ts ?? ""));
+
   progress("Готово", 100);
   return {
     profile,
@@ -196,6 +243,7 @@ export async function runPipeline(
     analyzedBy,
     problems,
     noise,
+    timeline,
     stats: {
       totalSignatures: signatures.length,
       errorCount,
@@ -205,6 +253,27 @@ export async function runPipeline(
     },
     createdAt: new Date().toISOString(),
   };
+}
+
+function componentOf(refs: DetectedProblem[]): string | null {
+  for (const r of refs) {
+    for (const e of r.evidence) {
+      if (e.component) return e.component;
+    }
+  }
+  return null;
+}
+
+function tsRange(refs: DetectedProblem[]): { first: string | null; last: string | null } {
+  let first: string | null = null;
+  let last: string | null = null;
+  for (const r of refs) {
+    for (const e of r.evidence) {
+      if (e.firstTs && (!first || e.firstTs < first)) first = e.firstTs;
+      if (e.lastTs && (!last || e.lastTs > last)) last = e.lastTs;
+    }
+  }
+  return { first, last };
 }
 
 function dedupeSources<T extends { title: string; url: string | null }>(arr: T[]): T[] {

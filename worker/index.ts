@@ -12,6 +12,7 @@ import { downloadToFile } from "../lib/storage";
 import { extractBundle, findReportDir } from "../lib/analyzer/ingest";
 import { runPipeline } from "../lib/analyzer/pipeline";
 import { loadOemEntries } from "../lib/oem-registry";
+import { loadSettings } from "../lib/settings";
 import { db } from "../db";
 import { analyses } from "../db/schema";
 
@@ -37,14 +38,27 @@ async function processJob(data: AnalysisJobData) {
 
     const reportDir = (await findReportDir(extractDir)) ?? extractDir;
 
-    const oemEntries = await loadOemEntries();
+    const [oemEntries, settings] = await Promise.all([
+      loadOemEntries(),
+      loadSettings(true),
+    ]);
     const report = await runPipeline(
       reportDir,
       (stage, pct) => {
         // Map pipeline 0-100 into the 10-99 band (download/extract took 0-10).
         void setProgress(analysisId, stage, 10 + Math.round(pct * 0.89));
       },
-      { oemEntries },
+      {
+        oemEntries,
+        settings: {
+          llmModel: settings.llmModel,
+          llmApiKey: settings.llmApiKey,
+          ragEnabled: settings.ragEnabled,
+          ragUrl: settings.ragUrl,
+          ragApiKey: settings.ragApiKey,
+          maskPii: settings.maskPii,
+        },
+      },
     );
 
     await db

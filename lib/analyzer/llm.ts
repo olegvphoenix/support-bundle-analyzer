@@ -1,6 +1,11 @@
 import { z } from "zod";
 import type { EvidencePack } from "./evidence";
 
+export interface LlmSettings {
+  model: string;
+  apiKey: string | null;
+}
+
 export const RcaProblemSchema = z.object({
   title: z.string().describe("Краткий заголовок проблемы"),
   severity: z.enum(["critical", "warning", "info"]),
@@ -47,12 +52,15 @@ const SYSTEM_PROMPT = `Ты — старший инженер техподдер
 
 export async function analyzeWithLlm(
   pack: EvidencePack,
+  settings?: LlmSettings,
 ): Promise<RcaResult | null> {
-  if (!process.env.GOOGLE_GENERATIVE_AI_API_KEY) return null;
+  const apiKey = settings?.apiKey ?? process.env.GOOGLE_GENERATIVE_AI_API_KEY ?? null;
+  if (!apiKey) return null;
   try {
     const { generateObject } = await import("ai");
-    const { google } = await import("@ai-sdk/google");
-    const model = process.env.LLM_MODEL || "gemini-1.5-pro";
+    const { createGoogleGenerativeAI } = await import("@ai-sdk/google");
+    const model = settings?.model || process.env.LLM_MODEL || "gemini-1.5-pro";
+    const google = createGoogleGenerativeAI({ apiKey });
     const { object } = await generateObject({
       model: google(model),
       schema: RcaResultSchema,

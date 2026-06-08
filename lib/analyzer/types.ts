@@ -126,6 +126,9 @@ export interface ReportProblem {
   storm: boolean;
   confidence: number;
   ruleId: string | null;
+  component: string | null;
+  firstTs: string | null;
+  lastTs: string | null;
   sampleMessages: string[];
   affectedFiles: string[];
   sources: RetrievedSource[];
@@ -137,6 +140,16 @@ export interface NoiseItem {
   ruleId: string | null;
 }
 
+// A point on the events timeline (derived from detected problems).
+export interface TimelineEvent {
+  ts: string | null;
+  severity: Severity;
+  subsystem: Subsystem;
+  title: string;
+  count: number;
+  storm: boolean;
+}
+
 export interface AnalysisReport {
   profile: BundleProfile;
   facts: SystemFacts;
@@ -145,6 +158,7 @@ export interface AnalysisReport {
   analyzedBy: "llm" | "rules";
   problems: ReportProblem[];
   noise: NoiseItem[];
+  timeline: TimelineEvent[];
   stats: {
     totalSignatures: number;
     errorCount: number;
