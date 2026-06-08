@@ -7,6 +7,7 @@ import { ArrowLeft, Loader2 } from "lucide-react";
 import { ProcessingView } from "@/components/analysis/processing-view";
 import { ReportView } from "@/components/analysis/report-view";
 import { Card } from "@/components/ui";
+import { apiPath } from "@/lib/utils";
 import type { AnalysisReport } from "@/lib/analyzer/types";
 
 interface AnalysisRow {
@@ -28,7 +29,7 @@ export default function AnalysisPage({
   const { data, isLoading, refetch } = useQuery<AnalysisRow>({
     queryKey: ["analysis", id, refetchKey],
     queryFn: async () => {
-      const res = await fetch(`/api/analyses/${id}`);
+      const res = await fetch(apiPath(`/api/analyses/${id}`));
       if (!res.ok) throw new Error("not found");
       return res.json();
     },

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { Card, ProgressBar } from "@/components/ui";
+import { apiPath } from "@/lib/utils";
 
 interface StatusEvent {
   status: "queued" | "processing" | "done" | "error";
@@ -25,7 +26,7 @@ export function ProcessingView({
   });
 
   useEffect(() => {
-    const es = new EventSource(`/api/analyses/${id}/status`);
+    const es = new EventSource(apiPath(`/api/analyses/${id}/status`));
     es.onmessage = (e) => {
       const data = JSON.parse(e.data) as StatusEvent;
       setState(data);

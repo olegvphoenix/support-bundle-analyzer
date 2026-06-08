@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { CheckCircle2, Plus, Trash2, XCircle } from "lucide-react";
 import { Badge, Button, Card } from "@/components/ui";
+import { apiPath } from "@/lib/utils";
 
 interface Oem {
   id: string;
@@ -27,11 +28,11 @@ export default function SettingsPage() {
   const qc = useQueryClient();
   const { data: config } = useQuery<Config>({
     queryKey: ["config"],
-    queryFn: async () => (await fetch("/api/config")).json(),
+    queryFn: async () => (await fetch(apiPath("/api/config"))).json(),
   });
   const { data: oems } = useQuery<Oem[]>({
     queryKey: ["oem"],
-    queryFn: async () => (await fetch("/api/oem")).json(),
+    queryFn: async () => (await fetch(apiPath("/api/oem"))).json(),
   });
 
   const [form, setForm] = useState({
@@ -43,7 +44,7 @@ export default function SettingsPage() {
 
   const create = useMutation({
     mutationFn: async () => {
-      const res = await fetch("/api/oem", {
+      const res = await fetch(apiPath("/api/oem"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -64,7 +65,7 @@ export default function SettingsPage() {
 
   const remove = useMutation({
     mutationFn: async (id: string) => {
-      await fetch(`/api/oem/${id}`, { method: "DELETE" });
+      await fetch(apiPath(`/api/oem/${id}`), { method: "DELETE" });
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["oem"] }),
   });

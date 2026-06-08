@@ -35,7 +35,12 @@ services:
       - miniodata:/data
 
   web:
-    build: { context: ., dockerfile: Dockerfile }
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BASE_PATH: ${BASE_PATH:-}
+        NEXT_PUBLIC_BASE_PATH: ${NEXT_PUBLIC_BASE_PATH:-}
     restart: unless-stopped
     command: npm run start
     env_file: .env
@@ -43,11 +48,17 @@ services:
       NODE_ENV: production
     depends_on:
       postgres: { condition: service_healthy }
+    # Bound to loopback — exposed publicly only through the host nginx.
     ports:
-      - "${WEB_PORT:-8090}:3000"
+      - "127.0.0.1:${WEB_PORT:-8090}:3000"
 
   worker:
-    build: { context: ., dockerfile: Dockerfile }
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BASE_PATH: ${BASE_PATH:-}
+        NEXT_PUBLIC_BASE_PATH: ${NEXT_PUBLIC_BASE_PATH:-}
     restart: unless-stopped
     command: npm run worker
     env_file: .env
@@ -57,7 +68,12 @@ services:
       minio: { condition: service_started }
 
   tus:
-    build: { context: ., dockerfile: Dockerfile }
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BASE_PATH: ${BASE_PATH:-}
+        NEXT_PUBLIC_BASE_PATH: ${NEXT_PUBLIC_BASE_PATH:-}
     restart: unless-stopped
     command: npm run tus
     env_file: .env
@@ -66,7 +82,7 @@ services:
       redis: { condition: service_started }
       minio: { condition: service_started }
     ports:
-      - "${TUS_HOST_PORT:-1080}:1080"
+      - "127.0.0.1:${TUS_HOST_PORT:-1080}:1080"
 
 volumes:
   pgdata:

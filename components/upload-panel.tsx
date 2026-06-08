@@ -7,6 +7,7 @@ import Tus from "@uppy/tus";
 import Dashboard from "@uppy/dashboard";
 import "@uppy/core/dist/style.min.css";
 import "@uppy/dashboard/dist/style.min.css";
+import { apiPath } from "@/lib/utils";
 
 export function UploadPanel() {
   const router = useRouter();
@@ -16,7 +17,7 @@ export function UploadPanel() {
 
   // Resolve the tus endpoint at runtime so one image works on any host.
   useEffect(() => {
-    fetch("/api/config")
+    fetch(apiPath("/api/config"))
       .then((r) => r.json())
       .then((c) => setTusUrl(c.tusUrl || "http://localhost:1080/files"))
       .catch(() => setTusUrl("http://localhost:1080/files"));
@@ -58,7 +59,7 @@ export function UploadPanel() {
       // The analysis row is created server-side at upload finish; resolve its id.
       for (let i = 0; i < 12; i++) {
         const res = await fetch(
-          `/api/analyses?storageKey=${encodeURIComponent(storageKey)}`,
+          apiPath(`/api/analyses?storageKey=${encodeURIComponent(storageKey)}`),
         );
         const row = await res.json();
         if (row?.id) {

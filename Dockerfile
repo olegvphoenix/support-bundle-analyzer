@@ -10,6 +10,11 @@ RUN npm ci
 
 # Build the Next.js app.
 FROM base AS build
+# basePath is baked at build time; pass it (and the public mirror) as build args.
+ARG BASE_PATH=""
+ARG NEXT_PUBLIC_BASE_PATH=""
+ENV BASE_PATH=$BASE_PATH
+ENV NEXT_PUBLIC_BASE_PATH=$NEXT_PUBLIC_BASE_PATH
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build

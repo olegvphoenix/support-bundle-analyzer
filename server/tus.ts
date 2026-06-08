@@ -7,7 +7,9 @@ import { getAnalysisQueue } from "../lib/queue";
 import { ensureBucket, BUCKET } from "../lib/storage";
 
 const PORT = Number(process.env.TUS_PORT || 1080);
-const PATH = "/files";
+// Configurable so the tus path can match an nginx sub-path (e.g. /sba/files),
+// keeping resumable upload URLs consistent behind a reverse proxy.
+const PATH = process.env.TUS_PATH || "/files";
 
 function buildStore(): S3Store {
   return new S3Store({

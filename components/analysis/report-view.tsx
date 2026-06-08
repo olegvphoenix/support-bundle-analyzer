@@ -21,6 +21,7 @@ import {
   SeverityBadge,
   SEVERITY_META,
 } from "@/components/ui";
+import { apiPath } from "@/lib/utils";
 
 export function ReportView({ id, report }: { id: string; report: AnalysisReport }) {
   const [active, setActive] = useState<ReportProblem | null>(null);
@@ -74,12 +75,12 @@ function HeaderCard({ report, id }: { report: AnalysisReport; id: string }) {
         </div>
       </div>
       <div className="flex gap-2">
-        <a href={`/api/analyses/${id}/export?format=md`} download>
+        <a href={apiPath(`/api/analyses/${id}/export?format=md`)} download>
           <Button variant="outline" size="sm">
             <Download className="h-4 w-4" /> Markdown
           </Button>
         </a>
-        <a href={`/api/analyses/${id}/export?format=json`} download>
+        <a href={apiPath(`/api/analyses/${id}/export?format=json`)} download>
           <Button variant="outline" size="sm">
             <FileText className="h-4 w-4" /> JSON
           </Button>

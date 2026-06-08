@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { ChevronRight, Inbox } from "lucide-react";
 import { Badge, Card } from "@/components/ui";
-import { formatBytes } from "@/lib/utils";
+import { apiPath, formatBytes } from "@/lib/utils";
 
 interface Row {
   id: string;
@@ -36,7 +36,7 @@ function healthColor(score: number | null) {
 export default function HistoryPage() {
   const { data, isLoading } = useQuery<Row[]>({
     queryKey: ["history"],
-    queryFn: async () => (await fetch("/api/analyses")).json(),
+    queryFn: async () => (await fetch(apiPath("/api/analyses"))).json(),
     refetchInterval: 5000,
   });
 
