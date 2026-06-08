@@ -253,62 +253,76 @@ const SUBSYSTEM_LABEL: Record<Subsystem, string> = {
 function InventoryBand({ report }: { report: AnalysisReport }) {
   const inv = report.inventory;
   const [open, setOpen] = useState(false);
-  if (!inv || !inv.objects.length) return null;
+  if (!inv || !inv.objects?.length) return null;
 
-  const tiles = [
-    { type: "camera", label: "Камеры", icon: Video, count: inv.counts.camera },
-    { type: "archive", label: "Архивы", icon: Database, count: inv.counts.archive },
-    { type: "detector", label: "Детекторы", icon: ScanEye, count: inv.counts.detector },
-    { type: "service", label: "Службы", icon: Cpu, count: inv.counts.service },
-  ];
-  const listed = inv.objects.filter((o) => o.type !== "service");
-  const shown = open ? listed : listed.slice(0, 8);
+  const byKey = new Map(inv.objects.map((o) => [o.key, o]));
+  // Equipment trees: components that bind several objects together.
+  const trees = (inv.components ?? [])
+    .filter((c) => c.memberKeys.length > 1)
+    .sort((a, b) => b.memberKeys.length - a.memberKeys.length);
+  const shownTrees = open ? trees : trees.slice(0, 5);
 
   return (
     <Card className="space-y-4">
       <div className="flex items-center gap-2">
         <Boxes className="h-4 w-4 text-[var(--muted)]" />
-        <h3 className="text-sm font-semibold">Конфигурация объекта</h3>
+        <h3 className="text-sm font-semibold">Оборудование объекта</h3>
         <span className="text-xs text-[var(--muted)]">из Config.local</span>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {tiles.map((t) => (
-          <div
-            key={t.type}
-            className="flex items-center gap-3 rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface-2)] px-4 py-3"
+      <div className="flex flex-wrap gap-2">
+        {(inv.classes ?? []).map((c) => (
+          <span
+            key={c.cls}
+            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-2)] px-3 py-1 text-xs"
           >
-            <t.icon className="h-5 w-5 text-[var(--muted)]" />
-            <div>
-              <div className="text-xl font-semibold">{t.count}</div>
-              <div className="text-xs text-[var(--muted)]">{t.label}</div>
-            </div>
-          </div>
+            <span className="font-medium">{c.cls}</span>
+            <span className="text-[var(--muted)]">×{c.count}</span>
+          </span>
         ))}
       </div>
 
-      {listed.length > 0 && (
-        <div className="space-y-1.5">
-          {shown.map((o) => (
-            <div
-              key={o.key}
-              className="flex items-center justify-between gap-3 rounded-lg bg-[var(--surface-2)] px-3 py-2 text-sm"
-            >
-              <span className="flex min-w-0 items-center gap-2">
-                <Badge>{o.type}</Badge>
-                <span className="truncate font-medium">{o.name || o.key}</span>
-              </span>
-              <span className="shrink-0 text-xs text-[var(--muted)]">
-                {[o.model, o.ip, o.volumes?.join(", ")].filter(Boolean).join(" · ") || o.key}
-              </span>
-            </div>
-          ))}
-          {listed.length > 8 && (
+      {trees.length > 0 && (
+        <div className="space-y-2">
+          <div className="text-xs font-medium text-[var(--muted)]">
+            Дерево связей оборудования
+          </div>
+          {shownTrees.map((comp) => {
+            const members = comp.memberKeys.filter((k) => k !== comp.hubKey);
+            return (
+              <div
+                key={comp.id}
+                className="rounded-lg border border-[var(--border)] bg-[var(--surface-2)] p-3"
+              >
+                <div className="flex items-center gap-2 text-sm font-medium">
+                  <Video className="h-4 w-4 text-[var(--muted)]" />
+                  {comp.label}
+                  <span className="text-xs font-normal text-[var(--muted)]">
+                    [{comp.hubKey}]
+                  </span>
+                </div>
+                <div className="mt-2 space-y-1 border-l border-[var(--border)] pl-4">
+                  {members.map((k) => {
+                    const o = byKey.get(k);
+                    return (
+                      <div key={k} className="flex items-center gap-2 text-xs">
+                        <span className="text-[var(--muted)]">└</span>
+                        <span className="font-medium">{o?.cls ?? k}</span>
+                        {o?.name && <span>«{o.name}»</span>}
+                        <span className="text-[var(--muted)]">[{k}]</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+          {trees.length > 5 && (
             <button
               onClick={() => setOpen((v) => !v)}
               className="text-xs text-[var(--primary)]"
             >
-              {open ? "свернуть" : `показать все (${listed.length})`}
+              {open ? "свернуть" : `показать все (${trees.length})`}
             </button>
           )}
         </div>

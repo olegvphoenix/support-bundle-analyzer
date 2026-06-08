@@ -374,12 +374,15 @@ function redactInventory(
   redactor: { redact: (t: string) => string },
 ): ConfigInventory {
   return {
-    counts: inv.counts,
+    classes: inv.classes,
+    components: inv.components.map((c) => ({
+      ...c,
+      label: redactor.redact(c.label),
+    })),
     objects: inv.objects.map((o) => ({
       ...o,
       name: o.name ? redactor.redact(o.name) : o.name,
       ip: o.ip ? redactor.redact(o.ip) : o.ip,
-      volumes: o.volumes?.map((v) => redactor.redact(v)),
     })),
   };
 }

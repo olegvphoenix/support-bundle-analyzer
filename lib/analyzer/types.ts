@@ -91,28 +91,39 @@ export interface DetectedProblem {
   retrievalQuery: string;
 }
 
-// An object from the system configuration (Config.local/config_repo): a camera,
-// archive, detector, etc. Built from each object's main.conf/meta.conf.
-export type ConfigObjectType = "camera" | "archive" | "detector" | "service";
-
+// An object from the system configuration (Config.local/config_repo). Its type
+// (class) and composition (offered endpoint types) come straight from the
+// config — nothing about the taxonomy is hardcoded in the analyzer.
 export interface ConfigObject {
   key: string; // directory name, e.g. "DeviceIpint.1"
-  type: ConfigObjectType;
-  name: string | null; // friendly name
-  vendor?: string | null;
-  model?: string | null;
+  cls: string; // class/type from config, e.g. "DeviceIpint", "MultimediaStorage"
+  instance: string; // "1", "Aqua", ...
+  name: string | null; // friendly_name from offers/meta
+  offers: string[]; // composition: offered endpoint types (from offers.conf)
+  refs: string[]; // referenced object keys (media topology edges from offers.conf)
   ip?: string | null;
-  channels?: number | null;
-  volumes?: string[]; // archive volume labels/paths
-  links?: string[]; // referenced object keys (e.g. archive -> camera endpoint)
-  // Lowercased match tokens (key, ip, GUIDs, endpoint names) used to resolve
+  model?: string | null;
+  componentId: number; // equipment-tree component this object belongs to
+  // Lowercased match tokens (key, ip, GUIDs, own access points) used to resolve
   // log events to this object. Omitted from the stored report.
   aliases: string[];
 }
 
+// A connected piece of equipment: a hub object (e.g. a camera) plus everything
+// bound to it in the config (its archive, detectors, ...). Built from the
+// reference graph, not from a hardcoded taxonomy.
+export interface EquipmentComponent {
+  id: number;
+  hubKey: string;
+  label: string;
+  memberKeys: string[];
+}
+
 export interface ConfigInventory {
   objects: ConfigObject[];
-  counts: { camera: number; archive: number; detector: number; service: number };
+  // Dynamic grouping by class (type) with counts — derived from the config.
+  classes: { cls: string; count: number }[];
+  components: EquipmentComponent[];
 }
 
 // System facts collected from non-log files.
@@ -192,7 +203,7 @@ export interface CorrelationStep {
 // thread), ordered in time — i.e. a candidate causal chain around that entity.
 export interface CorrelationGroup {
   entity: string;
-  entityKind: "camera" | "archive" | "detector" | "service" | "object" | "address" | "thread";
+  entityKind: "equipment" | "camera" | "object" | "address" | "thread";
   label: string;
   severity: Severity;
   firstTs: string | null;

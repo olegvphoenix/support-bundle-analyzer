@@ -55,10 +55,8 @@ export function splitEntity(entity: string): { kind: EntityKind; value: string }
 }
 
 const KIND_LABEL: Record<EntityKind, string> = {
+  equipment: "Оборудование",
   camera: "Камера",
-  archive: "Архив",
-  detector: "Детектор",
-  service: "Служба",
   object: "Объект",
   address: "Адрес",
   thread: "Поток",

@@ -47,16 +47,24 @@ export function buildEvidencePack(
   lines.push("");
 
   if (inventory && inventory.objects.length) {
-    const c = inventory.counts;
     lines.push("=== КОНФИГУРАЦИЯ ОБЪЕКТА ===");
     lines.push(
-      `Камер: ${c.camera}, архивов: ${c.archive}, детекторов: ${c.detector}, служб: ${c.service}`,
+      "Состав (по классам): " +
+        inventory.classes.map((c) => `${c.cls}×${c.count}`).join(", "),
     );
-    for (const o of inventory.objects.filter((o) => o.type !== "service").slice(0, 30)) {
-      const bits = [o.name, o.model, o.ip ? redactor.redact(o.ip) : null]
-        .filter(Boolean)
-        .join(", ");
-      lines.push(`  [${o.type}] ${o.key}${bits ? ` — ${bits}` : ""}`);
+    const byKey = new Map(inventory.objects.map((o) => [o.key, o]));
+    // Equipment tree: hub object + everything bound to it in the config.
+    const trees = inventory.components.filter((c) => c.memberKeys.length > 1);
+    if (trees.length) {
+      lines.push("Дерево оборудования (камера → связанные архив/детекторы):");
+      for (const comp of trees.slice(0, 20)) {
+        lines.push(`  • ${comp.label} [${comp.hubKey}]`);
+        for (const k of comp.memberKeys) {
+          if (k === comp.hubKey) continue;
+          const o = byKey.get(k);
+          lines.push(`      └ ${o?.cls ?? k}${o?.name ? ` «${o.name}»` : ""} [${k}]`);
+        }
+      }
     }
     lines.push("");
   }

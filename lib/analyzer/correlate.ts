@@ -29,10 +29,8 @@ function worst(a: Severity, b: Severity): Severity {
 }
 
 const KIND_PRIORITY: Record<string, number> = {
+  equipment: 0,
   camera: 0,
-  archive: 0,
-  detector: 0,
-  service: 1,
   object: 1,
   address: 2,
   thread: 3,
