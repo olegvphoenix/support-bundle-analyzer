@@ -1,9 +1,9 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ChevronLeft, ChevronRight, Inbox, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, Inbox, Loader2, Search, Trash2 } from "lucide-react";
 import { Badge, Card } from "@/components/ui";
 import { apiPath, formatBytes } from "@/lib/utils";
 
@@ -44,10 +44,19 @@ function healthColor(score: number | null) {
 }
 
 export default function HistoryPage() {
+  const qc = useQueryClient();
   const { data, isLoading } = useQuery<Row[]>({
     queryKey: ["history"],
     queryFn: async () => (await fetch(apiPath("/api/analyses"))).json(),
     refetchInterval: 5000,
+  });
+
+  const del = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(apiPath(`/api/analyses/${id}`), { method: "DELETE" });
+      if (!res.ok) throw new Error("failed");
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["history"] }),
   });
 
   const [q, setQ] = useState("");
@@ -134,6 +143,7 @@ export default function HistoryPage() {
                 <Th>Проблемы</Th>
                 <Th>Статус</Th>
                 <Th className="hidden lg:table-cell">Дата</Th>
+                <Th className="w-10" />
               </tr>
             </thead>
             <tbody>
@@ -163,6 +173,28 @@ export default function HistoryPage() {
                   </Td>
                   <Td className="hidden lg:table-cell text-xs text-[var(--muted)]">
                     {new Date(r.createdAt).toLocaleString("ru-RU")}
+                  </Td>
+                  <Td>
+                    <button
+                      onClick={() => {
+                        if (
+                          confirm(
+                            `Удалить анализ «${r.product ?? r.filename}» и его архив без возможности восстановления?`,
+                          )
+                        )
+                          del.mutate(r.id);
+                      }}
+                      disabled={del.isPending && del.variables === r.id}
+                      className="rounded-md p-1.5 text-[var(--muted)] hover:bg-[rgba(239,68,68,0.12)] hover:text-[var(--sev-critical)]"
+                      aria-label="Удалить"
+                      title="Удалить анализ и архив"
+                    >
+                      {del.isPending && del.variables === r.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-4 w-4" />
+                      )}
+                    </button>
                   </Td>
                 </tr>
               ))}
@@ -202,7 +234,7 @@ export default function HistoryPage() {
   );
 }
 
-function Th({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+function Th({ children, className = "" }: { children?: React.ReactNode; className?: string }) {
   return <th className={`px-4 py-3 font-medium ${className}`}>{children}</th>;
 }
 

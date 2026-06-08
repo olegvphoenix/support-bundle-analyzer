@@ -3,11 +3,12 @@
 import { use, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { ArrowLeft, Loader2, OctagonX } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { ArrowLeft, Loader2, OctagonX, Trash2 } from "lucide-react";
 import { ProcessingView } from "@/components/analysis/processing-view";
 import { ReportView } from "@/components/analysis/report-view";
 import { RestartControls } from "@/components/analysis/restart-controls";
-import { Card } from "@/components/ui";
+import { Button, Card } from "@/components/ui";
 import { apiPath } from "@/lib/utils";
 import type { AnalysisReport } from "@/lib/analyzer/types";
 
@@ -28,7 +29,9 @@ export default function AnalysisPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = use(params);
+  const router = useRouter();
   const [refetchKey, setRefetchKey] = useState(0);
+  const [deleting, setDeleting] = useState(false);
 
   const { data, isLoading, refetch } = useQuery<AnalysisRow>({
     queryKey: ["analysis", id, refetchKey],
@@ -39,14 +42,40 @@ export default function AnalysisPage({
     },
   });
 
+  const remove = async () => {
+    if (
+      !confirm(
+        "Удалить этот анализ и загруженный архив без возможности восстановления?",
+      )
+    )
+      return;
+    setDeleting(true);
+    try {
+      await fetch(apiPath(`/api/analyses/${id}`), { method: "DELETE" });
+      router.push("/history");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
-      <Link
-        href="/history"
-        className="inline-flex items-center gap-1 text-sm text-[var(--muted)] hover:text-[var(--foreground)]"
-      >
-        <ArrowLeft className="h-4 w-4" /> К истории
-      </Link>
+      <div className="flex items-center justify-between">
+        <Link
+          href="/history"
+          className="inline-flex items-center gap-1 text-sm text-[var(--muted)] hover:text-[var(--foreground)]"
+        >
+          <ArrowLeft className="h-4 w-4" /> К истории
+        </Link>
+        <Button variant="outline" size="sm" onClick={remove} disabled={deleting}>
+          {deleting ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Trash2 className="h-3.5 w-3.5" />
+          )}
+          Удалить
+        </Button>
+      </div>
 
       {isLoading && (
         <Card className="flex items-center gap-3 text-[var(--muted)]">

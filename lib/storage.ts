@@ -2,6 +2,8 @@ import {
   S3Client,
   GetObjectCommand,
   PutObjectCommand,
+  DeleteObjectCommand,
+  ListObjectsV2Command,
   CreateBucketCommand,
   HeadBucketCommand,
 } from "@aws-sdk/client-s3";
@@ -77,4 +79,30 @@ async function streamToString(stream: Readable): Promise<string> {
   const chunks: Buffer[] = [];
   for await (const chunk of stream) chunks.push(Buffer.from(chunk));
   return Buffer.concat(chunks).toString("utf-8");
+}
+
+// Delete a single object (best-effort).
+export async function deleteObject(key: string): Promise<void> {
+  await getS3().send(new DeleteObjectCommand({ Bucket: BUCKET, Key: key }));
+}
+
+// Delete every object under a prefix (e.g. an analysis' checkpoints folder).
+export async function deletePrefix(prefix: string): Promise<void> {
+  const s3 = getS3();
+  let token: string | undefined;
+  do {
+    const list = await s3.send(
+      new ListObjectsV2Command({
+        Bucket: BUCKET,
+        Prefix: prefix,
+        ContinuationToken: token,
+      }),
+    );
+    for (const obj of list.Contents ?? []) {
+      if (obj.Key) {
+        await s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: obj.Key }));
+      }
+    }
+    token = list.IsTruncated ? list.NextContinuationToken : undefined;
+  } while (token);
 }
