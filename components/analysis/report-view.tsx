@@ -14,6 +14,7 @@ import {
   Download,
   ExternalLink,
   FileText,
+  GitBranch,
   HardDrive,
   KeyRound,
   ListTree,
@@ -26,6 +27,7 @@ import {
 } from "lucide-react";
 import type {
   AnalysisReport,
+  CorrelationGroup,
   ReportProblem,
   Severity,
   Subsystem,
@@ -58,6 +60,14 @@ export function ReportView({ id, report }: { id: string; report: AnalysisReport 
       <HeaderCard report={report} id={id} />
       <StatsRow report={report} />
       <SubsystemTiles report={report} />
+
+      <CorrelationsBand
+        report={report}
+        onOpen={(pid) => {
+          const p = report.problems.find((x) => x.id === pid);
+          if (p) setActive(p);
+        }}
+      />
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">
@@ -224,6 +234,79 @@ function SubsystemTiles({ report }: { report: AnalysisReport }) {
         );
       })}
     </div>
+  );
+}
+
+const SUBSYSTEM_LABEL: Record<Subsystem, string> = {
+  license: "Лицензия",
+  cameras: "Камеры",
+  archive: "Архив",
+  detectors: "Детекторы",
+  network: "Сеть",
+  hardware: "Оборудование",
+  other: "Прочее",
+};
+
+function CorrelationsBand({
+  report,
+  onOpen,
+}: {
+  report: AnalysisReport;
+  onOpen: (problemId: string) => void;
+}) {
+  const groups: CorrelationGroup[] = report.correlations ?? [];
+  if (!groups.length) return null;
+
+  return (
+    <Card className="space-y-4">
+      <div className="flex items-center gap-2">
+        <GitBranch className="h-4 w-4 text-[var(--muted)]" />
+        <h3 className="text-sm font-semibold">Связанные события</h3>
+        <span className="text-xs text-[var(--muted)]">
+          цепочки вокруг одной сущности (камера, объект, адрес)
+        </span>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        {groups.map((g) => {
+          const color = SEVERITY_META[g.severity].color;
+          return (
+            <div
+              key={g.entity}
+              className="rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface-2)] p-4"
+              style={{ borderLeft: `3px solid ${color}` }}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-medium">{g.label}</span>
+                <SeverityBadge severity={g.severity} />
+              </div>
+              <ol className="relative mt-3 ml-1 border-l border-[var(--border)]">
+                {g.steps.map((s, i) => (
+                  <li key={`${s.problemId}-${i}`} className="relative py-1.5 pl-5">
+                    <span
+                      className="absolute -left-[5px] top-3 h-2.5 w-2.5 rounded-full ring-2 ring-[var(--surface-2)]"
+                      style={{ background: SEVERITY_META[s.severity].color }}
+                    />
+                    <button
+                      onClick={() => onOpen(s.problemId)}
+                      className="flex w-full flex-col items-start text-left hover:opacity-80"
+                    >
+                      <span className="flex items-center gap-2 text-xs text-[var(--muted)]">
+                        {s.ts && (
+                          <span className="font-mono">{formatTs(s.ts, true)}</span>
+                        )}
+                        <Badge>{SUBSYSTEM_LABEL[s.subsystem]}</Badge>
+                      </span>
+                      <span className="text-sm">{s.title}</span>
+                    </button>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
   );
 }
 

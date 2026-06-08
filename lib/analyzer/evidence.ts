@@ -1,10 +1,12 @@
 import type {
   BundleProfile,
+  CorrelationGroup,
   DetectedProblem,
   RetrievalResult,
   SystemFacts,
 } from "./types";
 import { createRedactor } from "./redact";
+import { formatCorrelationsForPrompt } from "./correlate";
 
 export interface EvidencePack {
   text: string;
@@ -20,6 +22,7 @@ export function buildEvidencePack(
   facts: SystemFacts,
   problems: DetectedProblem[],
   retrievals: Map<string, RetrievalResult>,
+  correlations: CorrelationGroup[] = [],
 ): EvidencePack {
   const redactor = createRedactor();
   const lines: string[] = [];
@@ -62,6 +65,16 @@ export function buildEvidencePack(
     }
     lines.push("");
   });
+
+  const corrText = formatCorrelationsForPrompt(correlations);
+  if (corrText) {
+    lines.push(corrText);
+    lines.push(
+      "Подсказка: события в одной цепочке относятся к одной сущности — оцени, " +
+        "не является ли более раннее событие первопричиной последующих.",
+    );
+    lines.push("");
+  }
 
   let text = lines.join("\n");
   if (text.length > CHAR_BUDGET) text = text.slice(0, CHAR_BUDGET) + "\n…(обрезано)";

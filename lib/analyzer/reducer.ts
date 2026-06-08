@@ -1,4 +1,5 @@
 import type { AggregatedSignature, LogRecord } from "./types";
+import { extractEntities } from "./entities";
 
 // Tokens that vary between otherwise-identical log lines; stripped to build a
 // stable signature so repeated errors collapse into one group.
@@ -34,6 +35,7 @@ interface Acc {
   firstTs: string | null;
   lastTs: string | null;
   addresses: Set<string>;
+  entities: Set<string>;
   perMinute: Map<string, number>;
 }
 
@@ -59,6 +61,7 @@ export class Reducer {
         firstTs: rec.ts,
         lastTs: rec.ts,
         addresses: new Set(),
+        entities: new Set(),
         perMinute: new Map(),
       };
       this.map.set(sig, acc);
@@ -66,6 +69,7 @@ export class Reducer {
     acc.count++;
     acc.files.add(rec.file);
     if (rec.address) acc.addresses.add(rec.address);
+    for (const e of extractEntities(rec)) acc.entities.add(e);
     if (rec.ts) {
       if (!acc.firstTs || rec.ts < acc.firstTs) acc.firstTs = rec.ts;
       if (!acc.lastTs || rec.ts > acc.lastTs) acc.lastTs = rec.ts;
@@ -89,6 +93,7 @@ export class Reducer {
         firstTs: acc.firstTs,
         lastTs: acc.lastTs,
         addresses: [...acc.addresses],
+        entities: [...acc.entities],
         storm: peak >= stormThreshold,
         peakPerMinute: peak,
       });

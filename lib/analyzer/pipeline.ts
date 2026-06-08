@@ -9,6 +9,7 @@ import { loadRules, applyRules } from "./rules-engine";
 import { loadDbRules } from "@/lib/rules-registry";
 import { retrieveSolution } from "./retrieval";
 import { buildEvidencePack } from "./evidence";
+import { buildCorrelations, type CorrInput } from "./correlate";
 import { analyzeWithLlm } from "./llm";
 import { createRedactor } from "./redact";
 import type { OemEntry } from "./oem-map";
@@ -19,6 +20,7 @@ import type {
 } from "./checkpoints";
 import type {
   AnalysisReport,
+  CorrelationGroup,
   DetectedProblem,
   NoiseItem,
   ReportProblem,
@@ -187,7 +189,23 @@ export async function stageLlm(
   const retrievals = new Map<string, RetrievalResult>(retrieval.retrievals);
   const settings = opts.settings;
 
-  const pack = buildEvidencePack(profile, facts, detected, retrievals);
+  // Pre-LLM correlation over detected signatures so the model can reason about
+  // chains of events around a shared entity (camera/object/address).
+  const detectedCorr = buildCorrelations(
+    detected
+      .map((d, idx) => ({ d, idx }))
+      .filter(({ d }) => d.severity !== "noise")
+      .map(({ d, idx }) => ({
+        id: `#${idx}`,
+        title: d.title,
+        subsystem: d.subsystem,
+        severity: d.severity,
+        firstTs: tsRange([d]).first,
+        entities: entitiesOf([d]),
+      })),
+  );
+
+  const pack = buildEvidencePack(profile, facts, detected, retrievals, detectedCorr);
   const llm = await analyzeWithLlm(
     pack,
     settings ? { model: settings.llmModel ?? "gemini-2.5-pro", apiKey: settings.llmApiKey ?? null } : undefined,
@@ -238,6 +256,7 @@ export async function stageLlm(
           .map((e) => redactor.redact(e.sampleMessage).slice(0, 400)),
         affectedFiles: [...new Set(refs.flatMap((r) => r.evidence.flatMap((e) => e.files)))],
         sources: dedupeSources(sources),
+        entities: entitiesOf(refs),
       };
     });
   } else {
@@ -266,6 +285,7 @@ export async function stageLlm(
           .map((e) => redactor.redact(e.sampleMessage).slice(0, 400)),
         affectedFiles: [...new Set(p.evidence.flatMap((e) => e.files))],
         sources: dedupeSources(sources),
+        entities: entitiesOf([p]),
       };
     });
   }
@@ -287,6 +307,17 @@ export async function stageLlm(
     }))
     .sort((a, b) => (a.ts ?? "").localeCompare(b.ts ?? ""));
 
+  const correlations: CorrelationGroup[] = buildCorrelations(
+    problems.map<CorrInput>((p) => ({
+      id: p.id,
+      title: p.title,
+      subsystem: p.subsystem,
+      severity: p.severity,
+      firstTs: p.firstTs,
+      entities: p.entities ?? [],
+    })),
+  );
+
   return {
     profile,
     facts,
@@ -296,6 +327,7 @@ export async function stageLlm(
     problems,
     noise,
     timeline,
+    correlations,
     stats: {
       totalSignatures: signatures.length,
       errorCount,
@@ -305,6 +337,16 @@ export async function stageLlm(
     },
     createdAt: new Date().toISOString(),
   };
+}
+
+function entitiesOf(refs: DetectedProblem[]): string[] {
+  const set = new Set<string>();
+  for (const r of refs) {
+    for (const e of r.evidence) {
+      for (const ent of e.entities ?? []) set.add(ent);
+    }
+  }
+  return [...set];
 }
 
 function componentOf(refs: DetectedProblem[]): string | null {

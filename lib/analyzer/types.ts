@@ -45,6 +45,9 @@ export interface AggregatedSignature {
   firstTs: string | null;
   lastTs: string | null;
   addresses: string[];
+  // Normalized entity ids this signature touches (cameras, objects, addresses,
+  // threads) — used to correlate events across subsystems into causal chains.
+  entities: string[];
   // Detected as a storm (high frequency over a short window).
   storm: boolean;
   peakPerMinute: number;
@@ -132,6 +135,8 @@ export interface ReportProblem {
   sampleMessages: string[];
   affectedFiles: string[];
   sources: RetrievedSource[];
+  // Entities this problem touches; basis for cross-problem correlation.
+  entities?: string[];
 }
 
 export interface NoiseItem {
@@ -150,6 +155,27 @@ export interface TimelineEvent {
   storm: boolean;
 }
 
+// One ordered step within a correlated chain of events.
+export interface CorrelationStep {
+  problemId: string;
+  ts: string | null;
+  title: string;
+  subsystem: Subsystem;
+  severity: Severity;
+}
+
+// A set of problems that share a real-world entity (camera, object, address,
+// thread), ordered in time — i.e. a candidate causal chain around that entity.
+export interface CorrelationGroup {
+  entity: string;
+  entityKind: "camera" | "object" | "address" | "thread";
+  label: string;
+  severity: Severity;
+  firstTs: string | null;
+  lastTs: string | null;
+  steps: CorrelationStep[];
+}
+
 export interface AnalysisReport {
   profile: BundleProfile;
   facts: SystemFacts;
@@ -159,6 +185,9 @@ export interface AnalysisReport {
   problems: ReportProblem[];
   noise: NoiseItem[];
   timeline: TimelineEvent[];
+  // Cross-problem correlations grouped by shared entity (optional; older
+  // reports created before this feature won't have it).
+  correlations?: CorrelationGroup[];
   stats: {
     totalSignatures: number;
     errorCount: number;
