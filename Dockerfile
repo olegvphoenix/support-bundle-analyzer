@@ -17,6 +17,8 @@ ENV BASE_PATH=$BASE_PATH
 ENV NEXT_PUBLIC_BASE_PATH=$NEXT_PUBLIC_BASE_PATH
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# Ensure the bundled 7za binary is executable inside the Linux image.
+RUN chmod +x node_modules/7zip-bin/linux/x64/7za node_modules/7zip-bin/linux/arm64/7za 2>/dev/null || true
 RUN npm run build
 
 # Runtime image: ships full node_modules so web, worker and tus can all run.

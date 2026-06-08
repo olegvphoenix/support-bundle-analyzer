@@ -1,17 +1,31 @@
 import Seven from "node-7z";
 import sevenBin from "7zip-bin";
+import { readdir, stat } from "node:fs/promises";
+import { existsSync, chmodSync } from "node:fs";
+import { join } from "node:path";
 
 const { extractFull } = Seven;
 const path7za = sevenBin.path7za;
-import { readdir, stat } from "node:fs/promises";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
+
+// The bundled 7za binary can lose its executable bit after npm install inside a
+// Linux container, causing spawn EACCES. Ensure it is executable (no-op on Windows).
+let chmodDone = false;
+function ensureExecutable(): void {
+  if (chmodDone || process.platform === "win32") return;
+  try {
+    chmodSync(path7za, 0o755);
+  } catch {
+    // best-effort; extract surfaces a clear error if it truly fails
+  }
+  chmodDone = true;
+}
 
 /**
  * Extract a .7z/.zip support bundle to destDir using the bundled 7za binary.
  * Streams to disk — constant memory footprint regardless of archive size.
  */
 export function extractBundle(archivePath: string, destDir: string): Promise<void> {
+  ensureExecutable();
   return new Promise((resolve, reject) => {
     const stream = extractFull(archivePath, destDir, {
       $bin: path7za,
