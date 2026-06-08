@@ -3,9 +3,10 @@
 import { use, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2, OctagonX } from "lucide-react";
 import { ProcessingView } from "@/components/analysis/processing-view";
 import { ReportView } from "@/components/analysis/report-view";
+import { RestartControls } from "@/components/analysis/restart-controls";
 import { Card } from "@/components/ui";
 import { apiPath } from "@/lib/utils";
 import type { AnalysisReport } from "@/lib/analyzer/types";
@@ -14,8 +15,10 @@ interface AnalysisRow {
   id: string;
   filename: string;
   size: number;
-  status: "queued" | "processing" | "done" | "error";
+  status: "queued" | "processing" | "done" | "error" | "cancelled";
   error: string | null;
+  storageKey: string | null;
+  availableStages: string[];
   report: AnalysisReport | null;
 }
 
@@ -58,6 +61,20 @@ export default function AnalysisPage({
         </Card>
       )}
 
+      {data && data.status === "cancelled" && (
+        <Card className="flex items-center gap-3 border-[var(--sev-warning)]/40">
+          <OctagonX className="h-5 w-5 text-[var(--sev-warning)]" />
+          <div>
+            <div className="font-medium text-[var(--sev-warning)]">
+              Анализ остановлен
+            </div>
+            <div className="text-sm text-[var(--muted)]">
+              Можно перезапустить с любого доступного этапа ниже.
+            </div>
+          </div>
+        </Card>
+      )}
+
       {data && (data.status === "queued" || data.status === "processing") && (
         <ProcessingView
           id={id}
@@ -73,6 +90,21 @@ export default function AnalysisPage({
       {data && data.status === "done" && data.report && (
         <ReportView id={id} report={data.report} />
       )}
+
+      {data &&
+        (data.status === "done" ||
+          data.status === "error" ||
+          data.status === "cancelled") && (
+          <RestartControls
+            id={id}
+            availableStages={data.availableStages ?? []}
+            hasStorage={!!data.storageKey}
+            onRerun={() => {
+              setRefetchKey((k) => k + 1);
+              refetch();
+            }}
+          />
+        )}
     </div>
   );
 }

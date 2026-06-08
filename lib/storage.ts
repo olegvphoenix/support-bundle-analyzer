@@ -1,6 +1,7 @@
 import {
   S3Client,
   GetObjectCommand,
+  PutObjectCommand,
   CreateBucketCommand,
   HeadBucketCommand,
 } from "@aws-sdk/client-s3";
@@ -43,4 +44,37 @@ export async function downloadToFile(key: string, destPath: string): Promise<voi
   const res = await s3.send(new GetObjectCommand({ Bucket: BUCKET, Key: key }));
   if (!res.Body) throw new Error(`Empty object body for key ${key}`);
   await pipeline(res.Body as Readable, createWriteStream(destPath));
+}
+
+// Persist a JSON checkpoint (stage artifact) to object storage.
+export async function putJson(key: string, value: unknown): Promise<void> {
+  const s3 = getS3();
+  await s3.send(
+    new PutObjectCommand({
+      Bucket: BUCKET,
+      Key: key,
+      Body: JSON.stringify(value),
+      ContentType: "application/json",
+    }),
+  );
+}
+
+// Load a JSON checkpoint back from object storage.
+export async function getJson<T>(key: string): Promise<T> {
+  const s3 = getS3();
+  const res = await s3.send(new GetObjectCommand({ Bucket: BUCKET, Key: key }));
+  if (!res.Body) throw new Error(`Empty object body for key ${key}`);
+  const body = res.Body as Readable & {
+    transformToString?: () => Promise<string>;
+  };
+  const text = body.transformToString
+    ? await body.transformToString()
+    : await streamToString(body);
+  return JSON.parse(text) as T;
+}
+
+async function streamToString(stream: Readable): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+  return Buffer.concat(chunks).toString("utf-8");
 }

@@ -15,12 +15,16 @@ export const analyses = pgTable("analyses", {
   size: bigint("size", { mode: "number" }).notNull().default(0),
   storageKey: text("storage_key"),
   status: text("status", {
-    enum: ["queued", "processing", "done", "error"],
+    enum: ["queued", "processing", "done", "error", "cancelled"],
   })
     .notNull()
     .default("queued"),
   progress: integer("progress").notNull().default(0),
   stage: text("stage").notNull().default(""),
+  // Cooperative cancellation flag — the worker checks it between stages.
+  cancelRequested: integer("cancel_requested").notNull().default(0),
+  // Stage keys whose output checkpoint is persisted (enables per-stage restart).
+  availableStages: jsonb("available_stages").$type<string[]>().notNull().default([]),
   // Denormalized fields for fast history listing.
   product: text("product"),
   version: text("version"),

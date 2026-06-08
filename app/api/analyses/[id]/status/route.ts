@@ -36,7 +36,12 @@ export async function GET(
           break;
         }
         send(row);
-        if (row.status === "done" || row.status === "error") break;
+        if (
+          row.status === "done" ||
+          row.status === "error" ||
+          row.status === "cancelled"
+        )
+          break;
         await new Promise((r) => setTimeout(r, 1000));
       }
       controller.close();

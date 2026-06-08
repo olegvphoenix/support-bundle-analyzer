@@ -15,6 +15,13 @@
       "when": 1780916587929,
       "tag": "0001_jazzy_moon_knight",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1780922015520,
+      "tag": "0002_silent_pete_wisdom",
+      "breakpoints": true
     }
   ]
 }

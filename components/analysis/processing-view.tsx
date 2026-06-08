@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, FileArchive, Loader2 } from "lucide-react";
-import { Card, ProgressBar } from "@/components/ui";
+import { Check, FileArchive, Loader2, Square } from "lucide-react";
+import { Button, Card, ProgressBar } from "@/components/ui";
 import { apiPath, formatBytes } from "@/lib/utils";
 
 interface StatusEvent {
-  status: "queued" | "processing" | "done" | "error";
+  status: "queued" | "processing" | "done" | "error" | "cancelled";
   progress: number;
   stage: string;
   error?: string | null;
@@ -36,6 +36,7 @@ export function ProcessingView({
     progress: 0,
     stage: "В очереди",
   });
+  const [stopping, setStopping] = useState(false);
 
   useEffect(() => {
     const es = new EventSource(apiPath(`/api/analyses/${id}/status`));
@@ -45,13 +46,23 @@ export function ProcessingView({
       if (data.status === "done") {
         es.close();
         onDone();
-      } else if (data.status === "error") {
+      } else if (data.status === "error" || data.status === "cancelled") {
         es.close();
+        onDone();
       }
     };
     es.onerror = () => es.close();
     return () => es.close();
   }, [id, onDone]);
+
+  const stop = async () => {
+    setStopping(true);
+    try {
+      await fetch(apiPath(`/api/analyses/${id}/cancel`), { method: "POST" });
+    } catch {
+      setStopping(false);
+    }
+  };
 
   if (state.status === "error") {
     return (
@@ -72,6 +83,16 @@ export function ProcessingView({
       <div className="flex items-center gap-3">
         <Loader2 className="h-5 w-5 animate-spin text-[var(--primary)]" />
         <div className="font-medium">Анализируем бандл…</div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={stop}
+          disabled={stopping}
+          className="ml-auto"
+        >
+          <Square className="h-3.5 w-3.5" />
+          {stopping ? "Останавливаем…" : "Остановить"}
+        </Button>
       </div>
 
       {filename && (

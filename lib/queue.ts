@@ -1,10 +1,14 @@
 import { Queue, type ConnectionOptions } from "bullmq";
 import IORedis from "ioredis";
 
+import type { StageKey } from "./analyzer/stages";
+
 export interface AnalysisJobData {
   analysisId: string;
   storageKey: string;
   filename: string;
+  // When set, resume the pipeline from this stage using stored checkpoints.
+  fromStage?: StageKey;
 }
 
 export const ANALYSIS_QUEUE = "analysis";

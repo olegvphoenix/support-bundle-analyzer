@@ -12,6 +12,11 @@ import { analyzeWithLlm } from "./llm";
 import { createRedactor } from "./redact";
 import type { OemEntry } from "./oem-map";
 import type {
+  ParseCheckpoint,
+  RulesCheckpoint,
+  RetrievalCheckpoint,
+} from "./checkpoints";
+import type {
   AnalysisReport,
   DetectedProblem,
   NoiseItem,
@@ -62,20 +67,40 @@ function healthFromProblems(problems: DetectedProblem[]): number {
 }
 
 /**
- * Run the full analysis over an extracted Report directory.
+ * Run the full analysis over an extracted Report directory (all stages).
  */
 export async function runPipeline(
   reportDir: string,
   progress: ProgressFn = () => {},
   opts: PipelineOptions = {},
 ): Promise<AnalysisReport> {
-  progress("Определение продукта", 5);
-  const profile = await detectProfile(reportDir, opts.oemEntries);
+  progress("Парсинг логов", 20);
+  const parse = await stageParse(reportDir, opts, (pct) =>
+    progress("Парсинг логов", 20 + Math.round(pct * 0.37)),
+  );
+  progress("Применение правил", 60);
+  const rules = await stageRules(parse);
+  progress("Поиск решений в базе знаний", 70);
+  const retrieval = await stageRetrieval(parse, rules, opts);
+  progress("Анализ ИИ", 85);
+  const report = await stageLlm(parse, rules, retrieval, opts);
+  progress("Готово", 100);
+  return report;
+}
 
-  progress("Сбор системных фактов", 12);
+/**
+ * Stage 1 (parse): profile + facts + log parsing/reduction over the extracted
+ * Report directory. `onPct` reports 0..100 within this stage.
+ */
+export async function stageParse(
+  reportDir: string,
+  opts: PipelineOptions = {},
+  onPct: (pct: number) => void = () => {},
+  checkCancel: () => Promise<void> = async () => {},
+): Promise<ParseCheckpoint> {
+  const profile = await detectProfile(reportDir, opts.oemEntries);
   const facts = await collectFacts(reportDir);
 
-  progress("Парсинг логов", 20);
   const reducer = new Reducer();
   let errorCount = 0;
   let warnCount = 0;
@@ -86,6 +111,7 @@ export async function runPipeline(
     const files = (await readdir(logsDir)).filter((f) => f.endsWith(".log"));
     let i = 0;
     for (const f of files) {
+      await checkCancel();
       logFiles++;
       await parseLogFile(join(logsDir, f), f, (rec) => {
         if (rec.level === "ERROR" || rec.level === "FATAL") {
@@ -97,50 +123,72 @@ export async function runPipeline(
         }
       });
       i++;
-      progress("Парсинг логов", 20 + Math.round((i / files.length) * 35));
+      onPct(Math.round((i / files.length) * 100));
     }
   }
 
-  progress("Свёртка и детект штормов", 58);
   const signatures = reducer.finish();
+  return { profile, facts, signatures, errorCount, warnCount, logFiles };
+}
 
-  progress("Применение правил", 64);
+/** Stage 2 (rules): apply the YAML knowledge base to reduced signatures. */
+export async function stageRules(
+  parse: ParseCheckpoint,
+): Promise<RulesCheckpoint> {
   const rules = await loadRules();
   const { problems: detected, noiseLineCount } = applyRules(
-    signatures,
+    parse.signatures,
     rules,
-    profile.productFamily,
+    parse.profile.productFamily,
   );
+  return { detected, noiseLineCount };
+}
 
-  // RAG retrieval for non-noise problems (best-effort, only if configured).
+/** Stage 3 (retrieval): best-effort RAG lookups for non-noise problems. */
+export async function stageRetrieval(
+  parse: ParseCheckpoint,
+  rules: RulesCheckpoint,
+  opts: PipelineOptions = {},
+): Promise<RetrievalCheckpoint> {
   const settings = opts.settings;
   const ragSettings = settings
     ? { enabled: settings.ragEnabled ?? true, url: settings.ragUrl ?? null, apiKey: settings.ragApiKey ?? null }
     : undefined;
-  progress("Поиск решений в базе знаний", 70);
   const retrievals = new Map<string, RetrievalResult>();
-  const ragTargets = detected
+  const ragTargets = rules.detected
     .filter((p) => p.severity !== "noise")
     .slice(0, 6);
   for (const p of ragTargets) {
     const r = await retrieveSolution(
       p.retrievalQuery,
-      profile,
+      parse.profile,
       p.evidence[0]?.sampleMessage,
       ragSettings,
       { subsystem: p.subsystem },
     );
     if (r) retrievals.set(p.retrievalQuery, r);
   }
+  return { retrievals: [...retrievals.entries()] };
+}
 
-  progress("Анализ ИИ", 80);
+/** Stage 4 (llm): LLM analysis + final report assembly. */
+export async function stageLlm(
+  parse: ParseCheckpoint,
+  rules: RulesCheckpoint,
+  retrieval: RetrievalCheckpoint,
+  opts: PipelineOptions = {},
+): Promise<AnalysisReport> {
+  const { profile, facts, signatures, errorCount, warnCount, logFiles } = parse;
+  const { detected, noiseLineCount } = rules;
+  const retrievals = new Map<string, RetrievalResult>(retrieval.retrievals);
+  const settings = opts.settings;
+
   const pack = buildEvidencePack(profile, facts, detected, retrievals);
   const llm = await analyzeWithLlm(
     pack,
     settings ? { model: settings.llmModel ?? "gemini-1.5-pro", apiKey: settings.llmApiKey ?? null } : undefined,
   );
 
-  progress("Формирование отчёта", 92);
   const redactor = settings && settings.maskPii === false ? identityRedactor() : createRedactor();
   const noise: NoiseItem[] = detected
     .filter((p) => p.severity === "noise")
@@ -235,7 +283,6 @@ export async function runPipeline(
     }))
     .sort((a, b) => (a.ts ?? "").localeCompare(b.ts ?? ""));
 
-  progress("Готово", 100);
   return {
     profile,
     facts,
