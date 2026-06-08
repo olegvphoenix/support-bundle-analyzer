@@ -8,16 +8,23 @@ import Dashboard from "@uppy/dashboard";
 import "@uppy/core/dist/style.min.css";
 import "@uppy/dashboard/dist/style.min.css";
 
-const TUS_URL =
-  process.env.NEXT_PUBLIC_TUS_URL || "http://localhost:1080/files";
-
 export function UploadPanel() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
+  const [tusUrl, setTusUrl] = useState<string | null>(null);
   const mountRef = useRef<HTMLDivElement>(null);
 
+  // Resolve the tus endpoint at runtime so one image works on any host.
   useEffect(() => {
-    if (!mountRef.current) return;
+    fetch("/api/config")
+      .then((r) => r.json())
+      .then((c) => setTusUrl(c.tusUrl || "http://localhost:1080/files"))
+      .catch(() => setTusUrl("http://localhost:1080/files"));
+  }, []);
+
+  useEffect(() => {
+    if (!mountRef.current || !tusUrl) return;
+    const TUS_URL = tusUrl;
 
     const uppy = new Uppy({
       autoProceed: true,
@@ -69,7 +76,7 @@ export function UploadPanel() {
     return () => {
       uppy.destroy();
     };
-  }, [router]);
+  }, [router, tusUrl]);
 
   return (
     <div className="space-y-3">

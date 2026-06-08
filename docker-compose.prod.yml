@@ -1,0 +1,74 @@
+# Standalone production stack for a shared Docker host (e.g. the Lexiro VPS).
+# Infra services (postgres/redis/minio) are NOT published to the host to avoid
+# port clashes with co-located stacks; they talk over the internal network only.
+# Externally exposed: web (WEB_PORT, default 8090) and tus uploads (TUS_HOST_PORT, default 1080).
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: support_analyzer
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redisdata:/data
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-minioadmin}
+    volumes:
+      - miniodata:/data
+
+  web:
+    build: { context: ., dockerfile: Dockerfile }
+    restart: unless-stopped
+    command: npm run start
+    env_file: .env
+    environment:
+      NODE_ENV: production
+    depends_on:
+      postgres: { condition: service_healthy }
+    ports:
+      - "${WEB_PORT:-8090}:3000"
+
+  worker:
+    build: { context: ., dockerfile: Dockerfile }
+    restart: unless-stopped
+    command: npm run worker
+    env_file: .env
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_started }
+      minio: { condition: service_started }
+
+  tus:
+    build: { context: ., dockerfile: Dockerfile }
+    restart: unless-stopped
+    command: npm run tus
+    env_file: .env
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_started }
+      minio: { condition: service_started }
+    ports:
+      - "${TUS_HOST_PORT:-1080}:1080"
+
+volumes:
+  pgdata:
+  redisdata:
+  miniodata:
