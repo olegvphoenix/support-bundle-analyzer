@@ -439,7 +439,7 @@ function OemRegistry() {
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label className="space-y-1.5">
+    <label className="space-y-1">
       <span className="block text-xs text-[var(--muted)]">{label}</span>
       {children}
     </label>
