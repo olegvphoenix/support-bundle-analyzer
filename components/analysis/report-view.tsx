@@ -5,6 +5,7 @@ import {
   Activity,
   AlertTriangle,
   BookmarkPlus,
+  Boxes,
   Check,
   CheckCircle2,
   Clock,
@@ -60,6 +61,8 @@ export function ReportView({ id, report }: { id: string; report: AnalysisReport 
       <HeaderCard report={report} id={id} />
       <StatsRow report={report} />
       <SubsystemTiles report={report} />
+
+      <InventoryBand report={report} />
 
       <CorrelationsBand
         report={report}
@@ -246,6 +249,73 @@ const SUBSYSTEM_LABEL: Record<Subsystem, string> = {
   hardware: "Оборудование",
   other: "Прочее",
 };
+
+function InventoryBand({ report }: { report: AnalysisReport }) {
+  const inv = report.inventory;
+  const [open, setOpen] = useState(false);
+  if (!inv || !inv.objects.length) return null;
+
+  const tiles = [
+    { type: "camera", label: "Камеры", icon: Video, count: inv.counts.camera },
+    { type: "archive", label: "Архивы", icon: Database, count: inv.counts.archive },
+    { type: "detector", label: "Детекторы", icon: ScanEye, count: inv.counts.detector },
+    { type: "service", label: "Службы", icon: Cpu, count: inv.counts.service },
+  ];
+  const listed = inv.objects.filter((o) => o.type !== "service");
+  const shown = open ? listed : listed.slice(0, 8);
+
+  return (
+    <Card className="space-y-4">
+      <div className="flex items-center gap-2">
+        <Boxes className="h-4 w-4 text-[var(--muted)]" />
+        <h3 className="text-sm font-semibold">Конфигурация объекта</h3>
+        <span className="text-xs text-[var(--muted)]">из Config.local</span>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {tiles.map((t) => (
+          <div
+            key={t.type}
+            className="flex items-center gap-3 rounded-[var(--radius)] border border-[var(--border)] bg-[var(--surface-2)] px-4 py-3"
+          >
+            <t.icon className="h-5 w-5 text-[var(--muted)]" />
+            <div>
+              <div className="text-xl font-semibold">{t.count}</div>
+              <div className="text-xs text-[var(--muted)]">{t.label}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {listed.length > 0 && (
+        <div className="space-y-1.5">
+          {shown.map((o) => (
+            <div
+              key={o.key}
+              className="flex items-center justify-between gap-3 rounded-lg bg-[var(--surface-2)] px-3 py-2 text-sm"
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                <Badge>{o.type}</Badge>
+                <span className="truncate font-medium">{o.name || o.key}</span>
+              </span>
+              <span className="shrink-0 text-xs text-[var(--muted)]">
+                {[o.model, o.ip, o.volumes?.join(", ")].filter(Boolean).join(" · ") || o.key}
+              </span>
+            </div>
+          ))}
+          {listed.length > 8 && (
+            <button
+              onClick={() => setOpen((v) => !v)}
+              className="text-xs text-[var(--primary)]"
+            >
+              {open ? "свернуть" : `показать все (${listed.length})`}
+            </button>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
 
 function CorrelationsBand({
   report,

@@ -30,6 +30,9 @@ function worst(a: Severity, b: Severity): Severity {
 
 const KIND_PRIORITY: Record<string, number> = {
   camera: 0,
+  archive: 0,
+  detector: 0,
+  service: 1,
   object: 1,
   address: 2,
   thread: 3,
@@ -42,9 +45,13 @@ const KIND_PRIORITY: Record<string, number> = {
  */
 export function buildCorrelations(
   items: CorrInput[],
-  opts: { maxGroups?: number; maxLinkedProblems?: number } = {},
+  opts: {
+    maxGroups?: number;
+    maxLinkedProblems?: number;
+    labels?: Map<string, string>;
+  } = {},
 ): CorrelationGroup[] {
-  const { maxGroups = 8, maxLinkedProblems = 8 } = opts;
+  const { maxGroups = 8, maxLinkedProblems = 8, labels } = opts;
   const itemById = new Map(items.map((i) => [i.id, i]));
   const byEntity = new Map<string, Set<string>>();
 
@@ -91,7 +98,7 @@ export function buildCorrelations(
     groups.push({
       entity,
       entityKind: kind,
-      label: entityLabel(entity),
+      label: labels?.get(entity) ?? entityLabel(entity),
       severity,
       firstTs: tss[0] ?? null,
       lastTs: tss[tss.length - 1] ?? null,

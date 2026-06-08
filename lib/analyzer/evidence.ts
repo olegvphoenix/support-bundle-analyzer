@@ -1,5 +1,6 @@
 import type {
   BundleProfile,
+  ConfigInventory,
   CorrelationGroup,
   DetectedProblem,
   RetrievalResult,
@@ -23,6 +24,7 @@ export function buildEvidencePack(
   problems: DetectedProblem[],
   retrievals: Map<string, RetrievalResult>,
   correlations: CorrelationGroup[] = [],
+  inventory?: ConfigInventory | null,
 ): EvidencePack {
   const redactor = createRedactor();
   const lines: string[] = [];
@@ -43,6 +45,21 @@ export function buildEvidencePack(
   }
   for (const n of facts.notes) lines.push(`! ${n}`);
   lines.push("");
+
+  if (inventory && inventory.objects.length) {
+    const c = inventory.counts;
+    lines.push("=== КОНФИГУРАЦИЯ ОБЪЕКТА ===");
+    lines.push(
+      `Камер: ${c.camera}, архивов: ${c.archive}, детекторов: ${c.detector}, служб: ${c.service}`,
+    );
+    for (const o of inventory.objects.filter((o) => o.type !== "service").slice(0, 30)) {
+      const bits = [o.name, o.model, o.ip ? redactor.redact(o.ip) : null]
+        .filter(Boolean)
+        .join(", ");
+      lines.push(`  [${o.type}] ${o.key}${bits ? ` — ${bits}` : ""}`);
+    }
+    lines.push("");
+  }
 
   lines.push("=== ОБНАРУЖЕННЫЕ ПРОБЛЕМЫ (по сигнатурам) ===");
   problems.forEach((p, idx) => {

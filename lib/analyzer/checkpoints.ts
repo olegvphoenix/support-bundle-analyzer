@@ -1,6 +1,7 @@
 import type {
   AggregatedSignature,
   BundleProfile,
+  ConfigInventory,
   DetectedProblem,
   RetrievalResult,
   SystemFacts,
@@ -16,6 +17,9 @@ export interface ParseCheckpoint {
   errorCount: number;
   warnCount: number;
   logFiles: number;
+  // Object configuration parsed from Config.local (optional; absent in older
+  // checkpoints created before this feature).
+  inventory?: ConfigInventory | null;
 }
 
 export interface RulesCheckpoint {

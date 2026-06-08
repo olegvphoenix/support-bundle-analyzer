@@ -91,6 +91,30 @@ export interface DetectedProblem {
   retrievalQuery: string;
 }
 
+// An object from the system configuration (Config.local/config_repo): a camera,
+// archive, detector, etc. Built from each object's main.conf/meta.conf.
+export type ConfigObjectType = "camera" | "archive" | "detector" | "service";
+
+export interface ConfigObject {
+  key: string; // directory name, e.g. "DeviceIpint.1"
+  type: ConfigObjectType;
+  name: string | null; // friendly name
+  vendor?: string | null;
+  model?: string | null;
+  ip?: string | null;
+  channels?: number | null;
+  volumes?: string[]; // archive volume labels/paths
+  links?: string[]; // referenced object keys (e.g. archive -> camera endpoint)
+  // Lowercased match tokens (key, ip, GUIDs, endpoint names) used to resolve
+  // log events to this object. Omitted from the stored report.
+  aliases: string[];
+}
+
+export interface ConfigInventory {
+  objects: ConfigObject[];
+  counts: { camera: number; archive: number; detector: number; service: number };
+}
+
 // System facts collected from non-log files.
 export interface SystemFacts {
   disks: { name: string; totalMb: number; freeMb: number }[];
@@ -168,7 +192,7 @@ export interface CorrelationStep {
 // thread), ordered in time — i.e. a candidate causal chain around that entity.
 export interface CorrelationGroup {
   entity: string;
-  entityKind: "camera" | "object" | "address" | "thread";
+  entityKind: "camera" | "archive" | "detector" | "service" | "object" | "address" | "thread";
   label: string;
   severity: Severity;
   firstTs: string | null;
@@ -188,6 +212,8 @@ export interface AnalysisReport {
   // Cross-problem correlations grouped by shared entity (optional; older
   // reports created before this feature won't have it).
   correlations?: CorrelationGroup[];
+  // Object configuration parsed from Config.local (optional).
+  inventory?: ConfigInventory;
   stats: {
     totalSignatures: number;
     errorCount: number;

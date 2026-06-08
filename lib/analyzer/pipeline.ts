@@ -10,6 +10,7 @@ import { loadDbRules } from "@/lib/rules-registry";
 import { retrieveSolution } from "./retrieval";
 import { buildEvidencePack } from "./evidence";
 import { buildCorrelations, type CorrInput } from "./correlate";
+import { parseConfigInventory, buildEntityResolver, inventoryForReport } from "./config-parser";
 import { analyzeWithLlm } from "./llm";
 import { createRedactor } from "./redact";
 import type { OemEntry } from "./oem-map";
@@ -20,6 +21,7 @@ import type {
 } from "./checkpoints";
 import type {
   AnalysisReport,
+  ConfigInventory,
   CorrelationGroup,
   DetectedProblem,
   NoiseItem,
@@ -103,6 +105,7 @@ export async function stageParse(
 ): Promise<ParseCheckpoint> {
   const profile = await detectProfile(reportDir, opts.oemEntries);
   const facts = await collectFacts(reportDir);
+  const inventory = await parseConfigInventory(reportDir).catch(() => null);
 
   const reducer = new Reducer();
   let errorCount = 0;
@@ -131,7 +134,7 @@ export async function stageParse(
   }
 
   const signatures = reducer.finish();
-  return { profile, facts, signatures, errorCount, warnCount, logFiles };
+  return { profile, facts, signatures, errorCount, warnCount, logFiles, inventory };
 }
 
 /** Stage 2 (rules): apply the YAML knowledge base to reduced signatures. */
@@ -189,8 +192,26 @@ export async function stageLlm(
   const retrievals = new Map<string, RetrievalResult>(retrieval.retrievals);
   const settings = opts.settings;
 
+  // Resolve raw log entities to named configuration objects (cameras, archives,
+  // detectors). When the config inventory is available we correlate around real
+  // named objects and drop weak raw signals (threads) entirely.
+  const resolver = buildEntityResolver(parse.inventory);
+  const labelMap = new Map<string, string>();
+  const resolveEntities = (raw: string[]): string[] => {
+    if (!resolver.has) return raw;
+    const out = new Set<string>();
+    for (const r of raw) {
+      const m = resolver.resolve(r);
+      if (m) {
+        out.add(m.entity);
+        labelMap.set(m.entity, m.label);
+      }
+    }
+    return [...out];
+  };
+
   // Pre-LLM correlation over detected signatures so the model can reason about
-  // chains of events around a shared entity (camera/object/address).
+  // chains of events around a shared entity (camera/archive/detector).
   const detectedCorr = buildCorrelations(
     detected
       .map((d, idx) => ({ d, idx }))
@@ -201,11 +222,12 @@ export async function stageLlm(
         subsystem: d.subsystem,
         severity: d.severity,
         firstTs: tsRange([d]).first,
-        entities: entitiesOf([d]),
+        entities: resolveEntities(entitiesOf([d])),
       })),
+    { labels: labelMap },
   );
 
-  const pack = buildEvidencePack(profile, facts, detected, retrievals, detectedCorr);
+  const pack = buildEvidencePack(profile, facts, detected, retrievals, detectedCorr, parse.inventory);
   const llm = await analyzeWithLlm(
     pack,
     settings ? { model: settings.llmModel ?? "gemini-2.5-pro", apiKey: settings.llmApiKey ?? null } : undefined,
@@ -256,7 +278,7 @@ export async function stageLlm(
           .map((e) => redactor.redact(e.sampleMessage).slice(0, 400)),
         affectedFiles: [...new Set(refs.flatMap((r) => r.evidence.flatMap((e) => e.files)))],
         sources: dedupeSources(sources),
-        entities: entitiesOf(refs),
+        entities: resolveEntities(entitiesOf(refs)),
       };
     });
   } else {
@@ -285,7 +307,7 @@ export async function stageLlm(
           .map((e) => redactor.redact(e.sampleMessage).slice(0, 400)),
         affectedFiles: [...new Set(p.evidence.flatMap((e) => e.files))],
         sources: dedupeSources(sources),
-        entities: entitiesOf([p]),
+        entities: resolveEntities(entitiesOf([p])),
       };
     });
   }
@@ -316,7 +338,12 @@ export async function stageLlm(
       firstTs: p.firstTs,
       entities: p.entities ?? [],
     })),
+    { labels: labelMap },
   );
+
+  const inventory = parse.inventory
+    ? redactInventory(inventoryForReport(parse.inventory), redactor)
+    : undefined;
 
   return {
     profile,
@@ -328,6 +355,7 @@ export async function stageLlm(
     noise,
     timeline,
     correlations,
+    inventory,
     stats: {
       totalSignatures: signatures.length,
       errorCount,
@@ -336,6 +364,23 @@ export async function stageLlm(
       logFiles,
     },
     createdAt: new Date().toISOString(),
+  };
+}
+
+// Mask client-identifying fields (IP, names, volume paths) in the stored
+// inventory when PII masking is enabled. `redactor` is identity when disabled.
+function redactInventory(
+  inv: ConfigInventory,
+  redactor: { redact: (t: string) => string },
+): ConfigInventory {
+  return {
+    counts: inv.counts,
+    objects: inv.objects.map((o) => ({
+      ...o,
+      name: o.name ? redactor.redact(o.name) : o.name,
+      ip: o.ip ? redactor.redact(o.ip) : o.ip,
+      volumes: o.volumes?.map((v) => redactor.redact(v)),
+    })),
   };
 }
 
