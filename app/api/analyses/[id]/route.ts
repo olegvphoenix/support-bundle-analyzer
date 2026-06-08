@@ -31,9 +31,13 @@ export async function DELETE(
   if (!row) return NextResponse.json({ error: "not found" }, { status: 404 });
 
   if (row.storageKey) {
-    await deleteObject(row.storageKey).catch((e) =>
-      console.warn(`Failed to delete bundle ${row.storageKey}:`, e),
-    );
+    // The bundle object plus the tus `.info` metadata sidecar.
+    await Promise.all([
+      deleteObject(row.storageKey).catch((e) =>
+        console.warn(`Failed to delete bundle ${row.storageKey}:`, e),
+      ),
+      deleteObject(`${row.storageKey}.info`).catch(() => {}),
+    ]);
   }
   await deletePrefix(`checkpoints/${id}/`).catch((e) =>
     console.warn(`Failed to delete checkpoints for ${id}:`, e),
