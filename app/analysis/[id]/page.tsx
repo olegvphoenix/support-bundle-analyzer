@@ -13,6 +13,7 @@ import type { AnalysisReport } from "@/lib/analyzer/types";
 interface AnalysisRow {
   id: string;
   filename: string;
+  size: number;
   status: "queued" | "processing" | "done" | "error";
   error: string | null;
   report: AnalysisReport | null;
@@ -60,6 +61,8 @@ export default function AnalysisPage({
       {data && (data.status === "queued" || data.status === "processing") && (
         <ProcessingView
           id={id}
+          filename={data.filename}
+          size={data.size}
           onDone={() => {
             setRefetchKey((k) => k + 1);
             refetch();

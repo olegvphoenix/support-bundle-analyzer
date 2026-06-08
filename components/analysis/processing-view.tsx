@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, Loader2 } from "lucide-react";
+import { Check, FileArchive, Loader2 } from "lucide-react";
 import { Card, ProgressBar } from "@/components/ui";
-import { apiPath } from "@/lib/utils";
+import { apiPath, formatBytes } from "@/lib/utils";
 
 interface StatusEvent {
   status: "queued" | "processing" | "done" | "error";
@@ -20,7 +20,17 @@ const STEPS = [
   { label: "LLM-анализ", end: 100 },
 ];
 
-export function ProcessingView({ id, onDone }: { id: string; onDone: () => void }) {
+export function ProcessingView({
+  id,
+  filename,
+  size,
+  onDone,
+}: {
+  id: string;
+  filename?: string;
+  size?: number;
+  onDone: () => void;
+}) {
   const [state, setState] = useState<StatusEvent>({
     status: "queued",
     progress: 0,
@@ -63,6 +73,20 @@ export function ProcessingView({ id, onDone }: { id: string; onDone: () => void 
         <Loader2 className="h-5 w-5 animate-spin text-[var(--primary)]" />
         <div className="font-medium">Анализируем бандл…</div>
       </div>
+
+      {filename && (
+        <div className="flex items-center gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-4 py-3">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-[var(--surface)] text-[var(--primary)]">
+            <FileArchive className="h-5 w-5" />
+          </span>
+          <div className="min-w-0">
+            <div className="truncate text-sm font-medium">{filename}</div>
+            {!!size && (
+              <div className="text-xs text-[var(--muted)]">{formatBytes(size)}</div>
+            )}
+          </div>
+        </div>
+      )}
 
       <div>
         <ProgressBar value={state.progress} />
