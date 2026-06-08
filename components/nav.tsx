@@ -2,50 +2,94 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, History, Settings, Upload } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { useQuery } from "@tanstack/react-query";
+import { Activity, BarChart3, History, Settings, Upload } from "lucide-react";
+import { cn, apiPath } from "@/lib/utils";
 
-const LINKS = [
-  { href: "/", label: "Загрузка", icon: Upload },
-  { href: "/history", label: "История", icon: History },
-  { href: "/settings", label: "Настройки", icon: Settings },
-];
+interface AnalysisRow {
+  id: string;
+  status: string;
+}
+
+function NavItem({
+  href,
+  label,
+  icon: Icon,
+  active,
+}: {
+  href: string;
+  label: string;
+  icon: typeof Upload;
+  active: boolean;
+}) {
+  return (
+    <Link
+      href={href}
+      className={cn(
+        "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors",
+        active
+          ? "bg-[var(--surface-2)] font-medium text-[var(--foreground)]"
+          : "text-[var(--muted)] hover:bg-[var(--surface-2)]/60 hover:text-[var(--foreground)]",
+      )}
+    >
+      <Icon
+        className="h-[18px] w-[18px]"
+        style={active ? { color: "var(--primary)" } : undefined}
+      />
+      {label}
+    </Link>
+  );
+}
 
 export function Nav() {
   const pathname = usePathname();
+
+  // "Анализы" points at the most recent analysis (falls back to history).
+  const { data } = useQuery<AnalysisRow[]>({
+    queryKey: ["history"],
+    queryFn: async () => (await fetch(apiPath("/api/analyses"))).json(),
+    refetchInterval: 5000,
+  });
+  const latest = data?.find((r) => r.status === "done") ?? data?.[0];
+  const analysesHref = latest ? `/analysis/${latest.id}` : "/history";
+
   return (
-    <header className="sticky top-0 z-40 border-b border-[var(--border)] bg-[var(--surface)]/80 backdrop-blur">
-      <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-3">
-        <Link href="/" className="flex items-center gap-2 font-semibold">
-          <span className="grid h-8 w-8 place-items-center rounded-lg bg-[var(--primary)] text-white">
-            <Activity className="h-5 w-5" />
-          </span>
-          <span>
-            Support<span className="text-[var(--muted)]">Analyzer</span>
-          </span>
-        </Link>
-        <nav className="flex items-center gap-1">
-          {LINKS.map(({ href, label, icon: Icon }) => {
-            const active =
-              href === "/" ? pathname === "/" : pathname.startsWith(href);
-            return (
-              <Link
-                key={href}
-                href={href}
-                className={cn(
-                  "flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors",
-                  active
-                    ? "bg-[var(--surface-2)] text-[var(--foreground)]"
-                    : "text-[var(--muted)] hover:text-[var(--foreground)]",
-                )}
-              >
-                <Icon className="h-4 w-4" />
-                {label}
-              </Link>
-            );
-          })}
-        </nav>
+    <aside className="fixed inset-y-0 left-0 z-40 flex w-60 flex-col border-r border-[var(--border)] bg-[var(--surface)]">
+      <Link href="/" className="flex items-center gap-3 px-5 py-5">
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[var(--primary)] text-white">
+          <Activity className="h-5 w-5" />
+        </span>
+        <span className="text-sm font-semibold leading-tight">
+          Support Bundle
+          <br />
+          Analyzer
+        </span>
+      </Link>
+
+      <nav className="flex-1 space-y-1 px-3 py-2">
+        <NavItem href="/" label="Загрузка" icon={Upload} active={pathname === "/"} />
+        <NavItem
+          href={analysesHref}
+          label="Анализы"
+          icon={BarChart3}
+          active={pathname.startsWith("/analysis")}
+        />
+        <NavItem
+          href="/history"
+          label="История"
+          icon={History}
+          active={pathname.startsWith("/history")}
+        />
+      </nav>
+
+      <div className="border-t border-[var(--border)] px-3 py-3">
+        <NavItem
+          href="/settings"
+          label="Настройки"
+          icon={Settings}
+          active={pathname.startsWith("/settings")}
+        />
       </div>
-    </header>
+    </aside>
   );
 }
