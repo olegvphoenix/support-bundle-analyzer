@@ -1,0 +1,183 @@
+# Starter knowledge base derived from analysis of three real support bundles.
+# Rules match on OEM-invariant signatures (component + error code + message core),
+# with RU/EN variants. severity: critical | warning | info | noise.
+rules:
+  - id: license_dongle_not_found
+    severity: critical
+    subsystem: license
+    title: Не найден аппаратный ключ лицензии (Guardant)
+    match:
+      anyOf:
+        - "Guardant dongles not found"
+        - "Аппаратные ключи Guardant не найдены"
+        - "Windows NT driver is required"
+    cause: >-
+      Не установлен драйвер Guardant, ключ физически отсутствует или не проброшен
+      в систему/виртуальную машину.
+    solution:
+      - Проверить физическое подключение USB-ключа Guardant
+      - Установить/переустановить драйвер Guardant (Windows NT driver)
+      - Проверить проброс USB в случае виртуальной машины
+    retrievalQuery: Guardant ключ лицензии не найден драйвер
+
+  - id: license_service_down
+    severity: critical
+    subsystem: license
+    title: Сервис лицензирования недоступен
+    match:
+      component: CLicenseChecker
+      anyOf:
+        - "License service out of work"
+        - "LicenseFailed"
+        - "Service should be restarted"
+    cause: >-
+      CLicenseChecker сообщает об отказе сервиса лицензирования (reason:7) —
+      объекты переходят в нерабочее состояние.
+    solution:
+      - Перезапустить службу лицензирования / NGP_Host_Service
+      - Проверить наличие и доступность ключа Guardant
+      - Проверить журналы сервиса лицензирования на причину отказа
+    retrievalQuery: License service out of work LicenseFailed reason 7 перезапуск
+
+  - id: storage_reconnect_storm
+    severity: warning
+    subsystem: archive
+    title: Шторм переподключений хранилища к источникам
+    match:
+      component: CSinkEndpoint
+      anyOf:
+        - "Can't resolve endpoint"
+        - "Reconnect"
+    frequency:
+      minPerMinute: 30
+    cause: >-
+      Хранилище (MultimediaStorage) не может подключиться к источнику
+      (камера/детектор): объект удалён, переименован, отключён или недоступен.
+    solution:
+      - Проверить существование и состояние источника (камера/детектор)
+      - Проверить сетевую доступность устройства
+      - Удалить или перенастроить ссылку на несуществующий источник
+    retrievalQuery: MultimediaStorage Can't resolve endpoint reconnect storm источник
+
+  - id: camera_blocking_config
+    severity: warning
+    subsystem: cameras
+    title: Блокирующая конфигурация камеры (EBlockingConfiguration)
+    match:
+      anyOf:
+        - "EBlockingConfiguration"
+        - "err:2817"
+    cause: Камера отклонила применение настроек из-за блокирующей конфигурации.
+    solution:
+      - Проверить настройки потоков/кодеков камеры в веб-интерфейсе устройства
+      - Сверить поддерживаемые параметры с конфигурацией в системе
+    retrievalQuery: EBlockingConfiguration ApplySettings камера настройки
+
+  - id: camera_time_parse
+    severity: info
+    subsystem: cameras
+    title: Не удаётся разобрать время устройства (Hikvision)
+    match:
+      anyOf:
+        - "Cant parse device time"
+        - "Can't parse device time"
+    cause: Драйвер не смог распарсить ответ устройства о времени.
+    solution:
+      - Проверить настройки времени/часового пояса на камере
+      - Обновить прошивку камеры при наличии обновлений
+    retrievalQuery: Hikvision cant parse device time часовой пояс
+
+  - id: acquire_dynamic_params_failed
+    severity: info
+    subsystem: cameras
+    title: Сбой получения динамических параметров устройства (код 8)
+    match:
+      anyOf:
+        - "AcquireDynamicParameters failed"
+    cause: Не удалось получить динамические параметры источника (error code 8).
+    solution:
+      - Проверить доступность и авторизацию устройства
+      - Проверить корректность драйвера/прошивки
+    retrievalQuery: AcquireDynamicParameters failed error code 8
+
+  - id: filesystem_path_missing
+    severity: warning
+    subsystem: archive
+    title: Недоступен путь к файлу/каталогу
+    match:
+      anyOf:
+        - "is_directory"
+        - "cannot find the path specified"
+    cause: Система не нашла путь к архиву/каталогу (диск отключён или путь удалён).
+    solution:
+      - Проверить подключение диска/тома хранилища архива
+      - Проверить корректность пути в настройках
+    retrievalQuery: boost filesystem cannot find path архив диск
+
+  - id: timezone_inconsistent
+    severity: info
+    subsystem: other
+    title: Несогласованность часового пояса (TimezoneHelper)
+    match:
+      component: TimezoneHelper
+      anyOf:
+        - "XInconsistent"
+        - "timezone helper timeout"
+    cause: Ошибка инициализации помощника часовых поясов.
+    solution:
+      - Проверить настройки часового пояса ОС
+      - Перезапустить службу
+    retrievalQuery: TimezoneHelper XInconsistent часовой пояс
+
+  - id: virtual_no_media_source
+    severity: noise
+    subsystem: cameras
+    title: Виртуальное устройство без источника медиа
+    match:
+      anyOf:
+        - "Can't find any media source"
+        - "No streams found"
+    cause: Виртуальное (тестовое) устройство не имеет файла-источника. Обычно безопасно.
+    solution:
+      - Игнорировать, если виртуальное устройство используется для тестов
+      - При необходимости указать корректный файл-источник
+    retrievalQuery: VirtualUtil Can't find any media source тестовое устройство
+
+  - id: usb_joystick_phantom
+    severity: noise
+    subsystem: hardware
+    title: Фантомный USB-джойстик (0.0.0.0)
+    match:
+      anyOf:
+        - "Can't open hid-device"
+        - "UsbSimpleJoysticks"
+    cause: Попытка подключения к несуществующему USB-джойстику. Безопасный шум.
+    solution:
+      - Игнорировать, если джойстик не используется
+    retrievalQuery: UsbSimpleJoysticks hid-device 0.0.0.0
+
+  - id: localizer_duplicate_keys
+    severity: noise
+    subsystem: other
+    title: Дублирующиеся ключи локализации (Localizer)
+    match:
+      anyOf:
+        - "identical addons localization keys"
+        - "will hide translation"
+    cause: Безобидные дубли ключей локализации аддонов. Не влияет на работу.
+    solution:
+      - Игнорировать (фоновый шум локализации)
+    retrievalQuery: Localizer identical addons localization keys
+
+  - id: driver_repo_parse
+    severity: noise
+    subsystem: other
+    title: Ошибка парсинга локализаций драйверов (.rep.loc)
+    match:
+      anyOf:
+        - "Can not load addon repository"
+        - "No such node (at:repository)"
+    cause: Безобидная ошибка чтения файлов локализации драйверов DriverPack.
+    solution:
+      - Игнорировать (не влияет на работу)
+    retrievalQuery: Can not load addon repository rep.loc DriverPack
