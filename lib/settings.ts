@@ -7,8 +7,10 @@ import { appSettings } from "@/db/schema";
 // are acceptable because this is a self-hosted, single-tenant tool.
 export interface AppSettings {
   // LLM
+  llmProvider: string;
   llmModel: string;
   llmApiKey: string | null;
+  tokenBudget: number;
   // RAG (Lexiro)
   ragEnabled: boolean;
   ragUrl: string | null;
@@ -16,6 +18,8 @@ export interface AppSettings {
   // Privacy
   maskPii: boolean;
   // Storage / retention (informational + enforced on upload/retention jobs)
+  s3Endpoint: string;
+  s3Bucket: string;
   maxUploadGb: number;
   retentionDays: number;
 }
@@ -25,12 +29,16 @@ const SECRET_KEYS: (keyof AppSettings)[] = ["llmApiKey", "ragApiKey"];
 
 export function envDefaults(): AppSettings {
   return {
+    llmProvider: process.env.LLM_PROVIDER || "google",
     llmModel: process.env.LLM_MODEL || "gemini-1.5-pro",
     llmApiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY || null,
+    tokenBudget: Number(process.env.LLM_TOKEN_BUDGET || 120000),
     ragEnabled: Boolean(process.env.LEXIRO_API_URL),
     ragUrl: process.env.LEXIRO_API_URL || null,
     ragApiKey: process.env.LEXIRO_API_KEY || null,
     maskPii: process.env.MASK_PII !== "false",
+    s3Endpoint: process.env.S3_ENDPOINT || "http://localhost:9000",
+    s3Bucket: process.env.S3_BUCKET || "bundles",
     maxUploadGb: Number(process.env.MAX_UPLOAD_GB || 5),
     retentionDays: Number(process.env.RETENTION_DAYS || 90),
   };

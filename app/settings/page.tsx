@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
-import { CheckCircle2, Loader2, Plus, Save, Trash2, XCircle } from "lucide-react";
+import { Eye, EyeOff, Loader2, Plus, Trash2 } from "lucide-react";
 import { Badge, Button, Card } from "@/components/ui";
 import { apiPath } from "@/lib/utils";
 
@@ -17,20 +17,37 @@ interface Oem {
 }
 
 interface Settings {
+  llmProvider: string;
   llmModel: string;
   llmApiKeySet: boolean;
+  tokenBudget: number;
   ragEnabled: boolean;
   ragUrl: string | null;
   ragApiKeySet: boolean;
   maskPii: boolean;
+  s3Endpoint: string;
+  s3Bucket: string;
   maxUploadGb: number;
   retentionDays: number;
 }
 
-interface Config {
-  s3Endpoint: string;
-  tusUrl: string;
-}
+const PROVIDERS: { value: string; label: string; models: string[] }[] = [
+  {
+    value: "google",
+    label: "Google Gemini",
+    models: ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-1.5-pro", "gemini-1.5-flash"],
+  },
+  {
+    value: "openai",
+    label: "OpenAI",
+    models: ["gpt-5.5", "gpt-4o", "gpt-4o-mini"],
+  },
+  {
+    value: "anthropic",
+    label: "Anthropic",
+    models: ["claude-3.7-sonnet", "claude-3.5-sonnet", "claude-3.5-haiku"],
+  },
+];
 
 export default function SettingsPage() {
   const qc = useQueryClient();
@@ -38,17 +55,16 @@ export default function SettingsPage() {
     queryKey: ["settings"],
     queryFn: async () => (await fetch(apiPath("/api/settings"))).json(),
   });
-  const { data: config } = useQuery<Config>({
-    queryKey: ["config"],
-    queryFn: async () => (await fetch(apiPath("/api/config"))).json(),
-  });
 
   return (
     <div className="space-y-8">
-      <h1 className="text-2xl font-semibold">Настройки</h1>
+      <h1 className="text-3xl font-bold">Настройки</h1>
 
       {settings ? (
-        <SettingsForm settings={settings} config={config} onSaved={() => qc.invalidateQueries({ queryKey: ["settings"] })} />
+        <SettingsForm
+          settings={settings}
+          onSaved={() => qc.invalidateQueries({ queryKey: ["settings"] })}
+        />
       ) : (
         <Card className="flex items-center gap-2 text-[var(--muted)]">
           <Loader2 className="h-4 w-4 animate-spin" /> Загрузка…
@@ -62,35 +78,31 @@ export default function SettingsPage() {
 
 function SettingsForm({
   settings,
-  config,
   onSaved,
 }: {
   settings: Settings;
-  config?: Config;
   onSaved: () => void;
 }) {
-  const [form, setForm] = useState({
+  const initial = () => ({
+    llmProvider: settings.llmProvider || "google",
     llmModel: settings.llmModel,
     llmApiKey: "",
+    tokenBudget: settings.tokenBudget,
     ragEnabled: settings.ragEnabled,
     ragUrl: settings.ragUrl ?? "",
     ragApiKey: "",
     maskPii: settings.maskPii,
+    s3Endpoint: settings.s3Endpoint,
+    s3Bucket: settings.s3Bucket,
     maxUploadGb: settings.maxUploadGb,
     retentionDays: settings.retentionDays,
   });
+  const [form, setForm] = useState(initial);
+  const [showRagToken, setShowRagToken] = useState(false);
 
   useEffect(() => {
-    setForm({
-      llmModel: settings.llmModel,
-      llmApiKey: "",
-      ragEnabled: settings.ragEnabled,
-      ragUrl: settings.ragUrl ?? "",
-      ragApiKey: "",
-      maskPii: settings.maskPii,
-      maxUploadGb: settings.maxUploadGb,
-      retentionDays: settings.retentionDays,
-    });
+    setForm(initial());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings]);
 
   const save = useMutation({
@@ -106,65 +118,78 @@ function SettingsForm({
     onSuccess: onSaved,
   });
 
-  const llmOk = settings.llmApiKeySet || form.llmApiKey.length > 0;
-  const ragOk = settings.ragEnabled && (settings.ragApiKeySet || !!settings.ragUrl || !!form.ragUrl);
+  const provider =
+    PROVIDERS.find((p) => p.value === form.llmProvider) ?? PROVIDERS[0];
+  const modelOptions = provider.models.includes(form.llmModel)
+    ? provider.models
+    : [form.llmModel, ...provider.models];
 
   return (
     <>
-      <section className="space-y-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--muted)]">
-          Статус интеграций
-        </h2>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <StatusCard ok={llmOk} title="Gemini (LLM)" value={settings.llmModel} />
-          <StatusCard ok={ragOk} title="Lexiro (RAG)" value={settings.ragEnabled ? "включён" : "выключен"} />
-          <StatusCard ok title="MinIO (S3)" value={config?.s3Endpoint ?? "—"} />
-          <StatusCard ok title="tus upload" value={config?.tusUrl ?? "—"} />
-        </div>
-      </section>
-
-      <section className="space-y-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--muted)]">
-          Анализ и ИИ
-        </h2>
-        <Card className="grid gap-4 sm:grid-cols-2">
-          <Field label="Модель LLM (Gemini)">
-            <input
+      <SectionCard title="LLM">
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Field label="Провайдер">
+            <select
+              className="input"
+              value={form.llmProvider}
+              onChange={(e) => {
+                const next = PROVIDERS.find((p) => p.value === e.target.value)!;
+                setForm({
+                  ...form,
+                  llmProvider: next.value,
+                  llmModel: next.models[0],
+                });
+              }}
+            >
+              {PROVIDERS.map((p) => (
+                <option key={p.value} value={p.value}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Модель">
+            <select
               className="input"
               value={form.llmModel}
               onChange={(e) => setForm({ ...form, llmModel: e.target.value })}
-              placeholder="gemini-1.5-pro"
-            />
+            >
+              {modelOptions.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
           </Field>
-          <Field label="API-ключ Gemini">
+          <Field label="Бюджет токенов на бандл">
             <input
               className="input"
-              type="password"
-              value={form.llmApiKey}
-              onChange={(e) => setForm({ ...form, llmApiKey: e.target.value })}
-              placeholder={settings.llmApiKeySet ? "•••••• (задан, оставьте пустым)" : "не задан"}
+              type="number"
+              min={1000}
+              step={1000}
+              value={form.tokenBudget}
+              onChange={(e) =>
+                setForm({ ...form, tokenBudget: Number(e.target.value) })
+              }
             />
           </Field>
-          <Toggle
-            label="Маскировать персональные данные (IP, хосты, секреты) перед отправкой в ИИ"
-            checked={form.maskPii}
-            onChange={(v) => setForm({ ...form, maskPii: v })}
+        </div>
+        <Field label="API-ключ">
+          <input
+            className="input"
+            type="password"
+            value={form.llmApiKey}
+            onChange={(e) => setForm({ ...form, llmApiKey: e.target.value })}
+            placeholder={
+              settings.llmApiKeySet ? "•••••• (задан, оставьте пустым)" : "не задан"
+            }
           />
-        </Card>
-      </section>
+        </Field>
+      </SectionCard>
 
-      <section className="space-y-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--muted)]">
-          База знаний (RAG / Lexiro)
-        </h2>
-        <Card className="grid gap-4 sm:grid-cols-2">
-          <Toggle
-            label="Использовать базу знаний для подсказок решений"
-            checked={form.ragEnabled}
-            onChange={(v) => setForm({ ...form, ragEnabled: v })}
-          />
-          <div />
-          <Field label="URL Lexiro (MCP-эндпоинт)">
+      <SectionCard title="RAG (Lexiro)">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Базовый URL">
             <input
               className="input"
               value={form.ragUrl}
@@ -172,53 +197,126 @@ function SettingsForm({
               placeholder="https://lexiro.io/mcp/"
             />
           </Field>
-          <Field label="API-ключ Lexiro">
+          <Field label="Токен">
+            <div className="relative">
+              <input
+                className="input pr-10"
+                type={showRagToken ? "text" : "password"}
+                value={form.ragApiKey}
+                onChange={(e) => setForm({ ...form, ragApiKey: e.target.value })}
+                placeholder={
+                  settings.ragApiKeySet
+                    ? "•••••• (задан, оставьте пустым)"
+                    : "не задан"
+                }
+              />
+              <button
+                type="button"
+                onClick={() => setShowRagToken((v) => !v)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--muted)] hover:text-[var(--foreground)]"
+                aria-label={showRagToken ? "Скрыть" : "Показать"}
+              >
+                {showRagToken ? (
+                  <EyeOff className="h-4 w-4" />
+                ) : (
+                  <Eye className="h-4 w-4" />
+                )}
+              </button>
+            </div>
+          </Field>
+        </div>
+        <Toggle
+          label="Включить ретривал"
+          checked={form.ragEnabled}
+          onChange={(v) => setForm({ ...form, ragEnabled: v })}
+        />
+      </SectionCard>
+
+      <SectionCard title="Конфиденциальность">
+        <Toggle
+          label="Маскировать клиентские данные (IP, хосты, пользователи)"
+          checked={form.maskPii}
+          onChange={(v) => setForm({ ...form, maskPii: v })}
+        />
+        <p className="text-sm text-[var(--muted)]">
+          Клиентские данные будут скрыты в анализах и не попадут в LLM и внешние
+          сервисы.
+        </p>
+      </SectionCard>
+
+      <SectionCard title="Хранилище">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <Field label="MinIO endpoint">
             <input
               className="input"
-              type="password"
-              value={form.ragApiKey}
-              onChange={(e) => setForm({ ...form, ragApiKey: e.target.value })}
-              placeholder={settings.ragApiKeySet ? "•••••• (задан, оставьте пустым)" : "не задан"}
+              value={form.s3Endpoint}
+              onChange={(e) => setForm({ ...form, s3Endpoint: e.target.value })}
+              placeholder="http://minio:9000"
             />
           </Field>
-        </Card>
-      </section>
-
-      <section className="space-y-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--muted)]">
-          Загрузка и хранение
-        </h2>
-        <Card className="grid gap-4 sm:grid-cols-2">
-          <Field label="Макс. размер архива, ГБ">
+          <Field label="Bucket">
+            <input
+              className="input"
+              value={form.s3Bucket}
+              onChange={(e) => setForm({ ...form, s3Bucket: e.target.value })}
+              placeholder="support-bundles"
+            />
+          </Field>
+          <Field label="Макс. размер загрузки, ГБ">
             <input
               className="input"
               type="number"
               min={1}
               value={form.maxUploadGb}
-              onChange={(e) => setForm({ ...form, maxUploadGb: Number(e.target.value) })}
+              onChange={(e) =>
+                setForm({ ...form, maxUploadGb: Number(e.target.value) })
+              }
             />
           </Field>
-          <Field label="Срок хранения, дней">
+          <Field label="Хранить архивы, дней">
             <input
               className="input"
               type="number"
               min={1}
               value={form.retentionDays}
-              onChange={(e) => setForm({ ...form, retentionDays: Number(e.target.value) })}
+              onChange={(e) =>
+                setForm({ ...form, retentionDays: Number(e.target.value) })
+              }
             />
           </Field>
-        </Card>
-      </section>
+        </div>
+      </SectionCard>
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center justify-end gap-3">
+        {save.isSuccess && (
+          <span className="text-sm text-[var(--sev-ok)]">Сохранено</span>
+        )}
+        {save.isError && (
+          <span className="text-sm text-[var(--sev-critical)]">
+            Ошибка сохранения
+          </span>
+        )}
         <Button onClick={() => save.mutate()} disabled={save.isPending}>
-          {save.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-          Сохранить настройки
+          {save.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+          Сохранить
         </Button>
-        {save.isSuccess && <span className="text-sm text-[var(--sev-ok)]">Сохранено</span>}
-        {save.isError && <span className="text-sm text-[var(--sev-critical)]">Ошибка сохранения</span>}
       </div>
     </>
+  );
+}
+
+function SectionCard({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Card className="space-y-4 p-6">
+      <h2 className="text-lg font-semibold">{title}</h2>
+      {children}
+    </Card>
   );
 }
 
@@ -349,7 +447,7 @@ function Toggle({
     <button
       type="button"
       onClick={() => onChange(!checked)}
-      className="flex items-center gap-3 text-left text-sm sm:col-span-2"
+      className="flex items-center gap-3 text-left text-sm"
     >
       <span
         className="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors"
@@ -360,23 +458,7 @@ function Toggle({
           style={{ transform: checked ? "translateX(18px)" : "translateX(2px)" }}
         />
       </span>
-      <span className="text-[var(--muted)]">{label}</span>
+      <span>{label}</span>
     </button>
-  );
-}
-
-function StatusCard({ ok, title, value }: { ok?: boolean; title: string; value: string }) {
-  return (
-    <Card className="flex items-center justify-between py-4">
-      <div className="min-w-0">
-        <div className="font-medium">{title}</div>
-        <div className="truncate text-xs text-[var(--muted)]">{value}</div>
-      </div>
-      {ok ? (
-        <CheckCircle2 className="h-5 w-5 shrink-0 text-[var(--sev-ok)]" />
-      ) : (
-        <XCircle className="h-5 w-5 shrink-0 text-[var(--sev-noise)]" />
-      )}
-    </Card>
   );
 }
