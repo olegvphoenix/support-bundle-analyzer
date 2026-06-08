@@ -59,7 +59,7 @@ export async function analyzeWithLlm(
   try {
     const { generateObject } = await import("ai");
     const { createGoogleGenerativeAI } = await import("@ai-sdk/google");
-    const model = settings?.model || process.env.LLM_MODEL || "gemini-1.5-pro";
+    const model = settings?.model || process.env.LLM_MODEL || "gemini-2.5-pro";
     const google = createGoogleGenerativeAI({ apiKey });
     const { object } = await generateObject({
       model: google(model),

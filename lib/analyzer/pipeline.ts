@@ -186,7 +186,7 @@ export async function stageLlm(
   const pack = buildEvidencePack(profile, facts, detected, retrievals);
   const llm = await analyzeWithLlm(
     pack,
-    settings ? { model: settings.llmModel ?? "gemini-1.5-pro", apiKey: settings.llmApiKey ?? null } : undefined,
+    settings ? { model: settings.llmModel ?? "gemini-2.5-pro", apiKey: settings.llmApiKey ?? null } : undefined,
   );
 
   const redactor = settings && settings.maskPii === false ? identityRedactor() : createRedactor();

@@ -35,17 +35,29 @@ const PROVIDERS: { value: string; label: string; models: string[] }[] = [
   {
     value: "google",
     label: "Google Gemini",
-    models: ["gemini-2.5-pro", "gemini-2.5-flash", "gemini-1.5-pro", "gemini-1.5-flash"],
+    models: [
+      "gemini-3.5-flash",
+      "gemini-3.1-pro-preview",
+      "gemini-3.1-flash-lite",
+      "gemini-3-pro-preview",
+      "gemini-3-flash-preview",
+      "gemini-2.5-pro",
+      "gemini-2.5-flash",
+      "gemini-2.5-flash-lite",
+      "gemini-2.0-flash",
+      "gemini-pro-latest",
+      "gemini-flash-latest",
+    ],
   },
   {
     value: "openai",
     label: "OpenAI",
-    models: ["gpt-5.5", "gpt-4o", "gpt-4o-mini"],
+    models: ["gpt-5.5", "gpt-5", "gpt-4.1", "gpt-4o", "gpt-4o-mini"],
   },
   {
     value: "anthropic",
     label: "Anthropic",
-    models: ["claude-3.7-sonnet", "claude-3.5-sonnet", "claude-3.5-haiku"],
+    models: ["claude-opus-4.1", "claude-sonnet-4.5", "claude-3.7-sonnet", "claude-3.5-haiku"],
   },
 ];
 

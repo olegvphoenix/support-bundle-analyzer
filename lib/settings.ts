@@ -30,7 +30,7 @@ const SECRET_KEYS: (keyof AppSettings)[] = ["llmApiKey", "ragApiKey"];
 export function envDefaults(): AppSettings {
   return {
     llmProvider: process.env.LLM_PROVIDER || "google",
-    llmModel: process.env.LLM_MODEL || "gemini-1.5-pro",
+    llmModel: process.env.LLM_MODEL || "gemini-2.5-pro",
     llmApiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY || null,
     tokenBudget: Number(process.env.LLM_TOKEN_BUDGET || 120000),
     ragEnabled: Boolean(process.env.LEXIRO_API_URL),
