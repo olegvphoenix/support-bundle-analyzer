@@ -1,4 +1,4 @@
-import { Queue } from "bullmq";
+import { Queue, type ConnectionOptions } from "bullmq";
 import IORedis from "ioredis";
 
 export interface AnalysisJobData {
@@ -23,10 +23,16 @@ export function getRedis(): IORedis {
   return conn;
 }
 
+// bullmq bundles its own ioredis copy; cast our shared instance to the type
+// bullmq expects (structurally identical, different module identity).
+export function getQueueConnection(): ConnectionOptions {
+  return getRedis() as unknown as ConnectionOptions;
+}
+
 export function getAnalysisQueue(): Queue<AnalysisJobData> {
   if (globalForQueue.__queue) return globalForQueue.__queue;
   const q = new Queue<AnalysisJobData>(ANALYSIS_QUEUE, {
-    connection: getRedis(),
+    connection: getQueueConnection(),
     defaultJobOptions: {
       attempts: 1,
       removeOnComplete: 100,

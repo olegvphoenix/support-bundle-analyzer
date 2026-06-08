@@ -60,6 +60,19 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+.input {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  color: var(--foreground);
+  outline: none;
+}
+.input:focus {
+  border-color: var(--primary);
+}
+
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;

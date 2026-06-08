@@ -1,12 +1,22 @@
 import { NextResponse } from "next/server";
-import { desc } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { analyses } from "@/db/schema";
 
 export const dynamic = "force-dynamic";
 
 // History list — lightweight columns only (no full report payload).
-export async function GET() {
+// Supports ?storageKey=... to resolve the analysis id created after an upload.
+export async function GET(req: Request) {
+  const storageKey = new URL(req.url).searchParams.get("storageKey");
+  if (storageKey) {
+    const [row] = await db
+      .select({ id: analyses.id })
+      .from(analyses)
+      .where(eq(analyses.storageKey, storageKey))
+      .limit(1);
+    return NextResponse.json(row ?? null);
+  }
   const rows = await db
     .select({
       id: analyses.id,

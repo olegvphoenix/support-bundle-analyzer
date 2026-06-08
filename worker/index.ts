@@ -3,7 +3,11 @@ import { eq } from "drizzle-orm";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ANALYSIS_QUEUE, getRedis, type AnalysisJobData } from "../lib/queue";
+import {
+  ANALYSIS_QUEUE,
+  getQueueConnection,
+  type AnalysisJobData,
+} from "../lib/queue";
 import { downloadToFile } from "../lib/storage";
 import { extractBundle, findReportDir } from "../lib/analyzer/ingest";
 import { runPipeline } from "../lib/analyzer/pipeline";
@@ -77,7 +81,7 @@ async function processJob(data: AnalysisJobData) {
 const worker = new Worker<AnalysisJobData>(
   ANALYSIS_QUEUE,
   async (job) => processJob(job.data),
-  { connection: getRedis(), concurrency: 2 },
+  { connection: getQueueConnection(), concurrency: 2 },
 );
 
 worker.on("ready", () => console.log("Analysis worker ready."));
