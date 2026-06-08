@@ -41,7 +41,7 @@ function NavItem({
   );
 }
 
-export function Nav() {
+export function Nav({ width }: { width?: number }) {
   const pathname = usePathname();
 
   // "Анализы" points at the most recent analysis (falls back to history).
@@ -54,7 +54,10 @@ export function Nav() {
   const analysesHref = latest ? `/analysis/${latest.id}` : "/history";
 
   return (
-    <aside className="fixed inset-y-0 left-0 z-40 flex w-60 flex-col border-r border-[var(--border)] bg-[var(--surface)]">
+    <aside
+      className="fixed inset-y-0 left-0 z-40 flex flex-col overflow-hidden border-r border-[var(--border)] bg-[var(--surface)]"
+      style={{ width: width ?? 240 }}
+    >
       <Link href="/" className="flex items-center gap-3 px-5 py-5">
         <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[var(--primary)] text-white">
           <Activity className="h-5 w-5" />
