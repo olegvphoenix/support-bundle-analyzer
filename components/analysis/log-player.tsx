@@ -925,7 +925,7 @@ const Lane = memo(function Lane({
   );
 });
 
-const CHAPTER_MIN_GAP = 9; // percent of width; closer markers are merged
+const CHAPTER_MERGE_GAP = 2.5; // percent of width; markers this close become one
 
 const CHAPTER_PRIORITY: Record<string, number> = { storm: 0, restart: 1, entity: 2, ai: 3 };
 
@@ -945,24 +945,50 @@ function ChapterRow({
     ai: "var(--primary)",
   };
 
-  // Merge markers that fall within MIN_GAP into a single labelled cluster so
-  // nothing overlaps. The representative is the highest-priority kind; a "×N"
-  // suffix shows how many were merged.
-  const sorted = chapters
-    .map((c) => ({ c, pct: ((c.ts - startTs) / span) * 100 }))
-    .filter((x) => x.pct >= -2 && x.pct <= 102)
-    .sort((a, b) => a.pct - b.pct);
-
-  const clusters: { pct: number; rep: TimelineChapter; count: number }[] = [];
-  for (const { c, pct } of sorted) {
-    const last = clusters[clusters.length - 1];
-    if (last && pct - last.pct < CHAPTER_MIN_GAP) {
-      last.count++;
-      if (CHAPTER_PRIORITY[c.kind] < CHAPTER_PRIORITY[last.rep.kind]) last.rep = c;
-    } else {
-      clusters.push({ pct, rep: c, count: 1 });
+  // Merge markers at (almost) the same position into one labelled cluster.
+  const clusters = useMemo(() => {
+    const sorted = chapters
+      .map((c) => ({ c, pct: ((c.ts - startTs) / span) * 100 }))
+      .filter((x) => x.pct >= -2 && x.pct <= 102)
+      .sort((a, b) => a.pct - b.pct);
+    const out: { pct: number; rep: TimelineChapter; count: number }[] = [];
+    for (const { c, pct } of sorted) {
+      const last = out[out.length - 1];
+      if (last && pct - last.pct < CHAPTER_MERGE_GAP) {
+        last.count++;
+        if (CHAPTER_PRIORITY[c.kind] < CHAPTER_PRIORITY[last.rep.kind]) last.rep = c;
+      } else {
+        out.push({ pct, rep: c, count: 1 });
+      }
     }
-  }
+    return out;
+  }, [chapters, startTs, span]);
+
+  // Hide labels that would physically overlap an already-shown one (measured),
+  // keeping the flag icon. This is the only reliable way since label widths vary.
+  const labelRefs = useRef<(HTMLSpanElement | null)[]>([]);
+  const [hiddenLabels, setHiddenLabels] = useState<Set<number>>(new Set());
+
+  useEffect(() => {
+    const measure = () => {
+      const hidden = new Set<number>();
+      const kept: { left: number; right: number }[] = [];
+      clusters.forEach((_, i) => {
+        const el = labelRefs.current[i];
+        if (!el) return;
+        const r = el.getBoundingClientRect();
+        if (kept.some((k) => r.left < k.right + 6 && r.right > k.left - 6)) {
+          hidden.add(i);
+        } else {
+          kept.push({ left: r.left, right: r.right });
+        }
+      });
+      setHiddenLabels(hidden);
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [clusters]);
 
   return (
     <div className="relative ml-[120px] h-6">
@@ -970,6 +996,7 @@ function ChapterRow({
         const transform =
           cl.pct > 85 ? "translateX(-100%)" : cl.pct < 6 ? "translateX(0)" : "translateX(-50%)";
         const label = cl.count > 1 ? `${cl.rep.label} ×${cl.count}` : cl.rep.label;
+        const labelShown = !hiddenLabels.has(i);
         return (
           <div
             key={i}
@@ -984,7 +1011,14 @@ function ChapterRow({
               />
               <path fill="currentColor" d="M7 3h11l-3 4 3 4H7V3Z" />
             </svg>
-            {label}
+            <span
+              ref={(el) => {
+                labelRefs.current[i] = el;
+              }}
+              className={labelShown ? "" : "opacity-0"}
+            >
+              {label}
+            </span>
           </div>
         );
       })}
