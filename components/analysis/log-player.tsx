@@ -105,8 +105,9 @@ function levelKey(level: string): "ERROR" | "WARN" | "INFO" {
   return "INFO";
 }
 
-// Find the time window that contains the bulk of the activity, trimming sparse
-// outliers at the edges (so the default view focuses on where logs actually are).
+// Find the smallest contiguous time window that still contains the bulk of the
+// activity. This focuses the default view on the dense region even when a few
+// sparse events are scattered across a much longer total span.
 function computeFocus(o: Overview): { start: number; end: number } {
   const full = { start: o.startTs, end: o.endTs };
   const totals = o.agg.map((b) =>
@@ -117,31 +118,27 @@ function computeFocus(o: Overview): { start: number; end: number } {
   const span = Math.max(1, o.endTs - o.startTs);
   const tsOf = (bucket: number) => o.startTs + (bucket / o.buckets) * span;
 
-  const loCut = total * 0.01;
-  const hiCut = total * 0.99;
-  let cum = 0;
-  let loB = 0;
-  let hiB = o.buckets - 1;
-  for (let i = 0; i < totals.length; i++) {
-    cum += totals[i];
-    if (cum >= loCut) {
-      loB = i;
-      break;
+  // Two-pointer: minimal [i, j] bucket window whose sum covers `coverage`.
+  const coverage = total * 0.9;
+  let best: [number, number] | null = null;
+  let sum = 0;
+  let i = 0;
+  for (let j = 0; j < totals.length; j++) {
+    sum += totals[j];
+    while (sum - totals[i] >= coverage) {
+      sum -= totals[i];
+      i++;
+    }
+    if (sum >= coverage) {
+      if (!best || j - i < best[1] - best[0]) best = [i, j];
     }
   }
-  cum = 0;
-  for (let i = 0; i < totals.length; i++) {
-    cum += totals[i];
-    if (cum >= hiCut) {
-      hiB = i;
-      break;
-    }
-  }
-  const pad = span * 0.02;
-  let start = Math.max(o.startTs, tsOf(loB) - pad);
-  let end = Math.min(o.endTs, tsOf(hiB + 1) + pad);
+  if (!best) return full;
+
+  const pad = (best[1] - best[0] + 1) * ((o.endTs - o.startTs) / o.buckets) * 0.15;
+  let start = Math.max(o.startTs, tsOf(best[0]) - pad);
+  let end = Math.min(o.endTs, tsOf(best[1] + 1) + pad);
   if (end - start < 5000) {
-    // Degenerate (everything in one instant) — fall back to a small window.
     const mid = (start + end) / 2;
     start = Math.max(o.startTs, mid - 2500);
     end = Math.min(o.endTs, mid + 2500);
@@ -472,7 +469,9 @@ export function LogPlayer({
 
   const ph = playhead ?? startTs;
   const phPct = ((ph - startTs) / span) * 100;
-  const tickTimes = matches?.length ? matches.map((m) => m.ts) : errorTimes;
+  // Ticks mark search hits only; error positions are already visible as the red
+  // oscilloscope (showing every error as a white line turns into a solid block).
+  const tickTimes = matches?.length ? matches.map((m) => m.ts) : [];
 
   return (
     <div
@@ -926,7 +925,9 @@ const Lane = memo(function Lane({
   );
 });
 
-const CHAPTER_MIN_GAP = 13; // percent of width before labels are stacked
+const CHAPTER_MIN_GAP = 9; // percent of width; closer markers are merged
+
+const CHAPTER_PRIORITY: Record<string, number> = { storm: 0, restart: 1, entity: 2, ai: 3 };
 
 function ChapterRow({
   chapters,
@@ -944,40 +945,46 @@ function ChapterRow({
     ai: "var(--primary)",
   };
 
-  // Place each marker on one of two rows so nearby labels don't overlap, and
-  // anchor labels away from the edges so they don't overflow the timeline.
-  const rowLast = [-Infinity, -Infinity];
-  const placed = chapters
+  // Merge markers that fall within MIN_GAP into a single labelled cluster so
+  // nothing overlaps. The representative is the highest-priority kind; a "×N"
+  // suffix shows how many were merged.
+  const sorted = chapters
     .map((c) => ({ c, pct: ((c.ts - startTs) / span) * 100 }))
-    .sort((a, b) => a.pct - b.pct)
-    .map(({ c, pct }) => {
-      let row = pct - rowLast[0] < CHAPTER_MIN_GAP ? 1 : 0;
-      if (row === 1 && pct - rowLast[1] < CHAPTER_MIN_GAP) {
-        row = rowLast[0] <= rowLast[1] ? 0 : 1;
-      }
-      rowLast[row] = pct;
-      return { c, pct, row };
-    });
+    .filter((x) => x.pct >= -2 && x.pct <= 102)
+    .sort((a, b) => a.pct - b.pct);
+
+  const clusters: { pct: number; rep: TimelineChapter; count: number }[] = [];
+  for (const { c, pct } of sorted) {
+    const last = clusters[clusters.length - 1];
+    if (last && pct - last.pct < CHAPTER_MIN_GAP) {
+      last.count++;
+      if (CHAPTER_PRIORITY[c.kind] < CHAPTER_PRIORITY[last.rep.kind]) last.rep = c;
+    } else {
+      clusters.push({ pct, rep: c, count: 1 });
+    }
+  }
 
   return (
-    <div className="relative ml-[120px] h-9">
-      {placed.map(({ c, pct, row }, i) => {
+    <div className="relative ml-[120px] h-6">
+      {clusters.map((cl, i) => {
         const transform =
-          pct > 85 ? "translateX(-100%)" : pct < 6 ? "translateX(0)" : "translateX(-50%)";
+          cl.pct > 85 ? "translateX(-100%)" : cl.pct < 6 ? "translateX(0)" : "translateX(-50%)";
+        const label = cl.count > 1 ? `${cl.rep.label} ×${cl.count}` : cl.rep.label;
         return (
           <div
             key={i}
+            title={label}
             className="absolute flex items-center gap-1 whitespace-nowrap text-[11px] text-[var(--muted)]"
-            style={{ left: `${pct}%`, top: row * 17, transform }}
+            style={{ left: `${cl.pct}%`, transform }}
           >
-            <svg viewBox="0 0 24 24" className="h-3 w-3 shrink-0" style={{ color: flagColor[c.kind] }}>
+            <svg viewBox="0 0 24 24" className="h-3 w-3 shrink-0" style={{ color: flagColor[cl.rep.kind] }}>
               <path
                 fill="currentColor"
                 d="M5 3a1 1 0 0 1 1-1h0a1 1 0 0 1 1 1v18a1 1 0 1 1-2 0V3Z"
               />
               <path fill="currentColor" d="M7 3h11l-3 4 3 4H7V3Z" />
             </svg>
-            {c.label}
+            {label}
           </div>
         );
       })}
