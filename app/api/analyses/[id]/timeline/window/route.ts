@@ -21,6 +21,8 @@ export async function GET(
 
   const from = Number(url.searchParams.get("from") ?? manifest.startTs);
   const to = Number(url.searchParams.get("to") ?? manifest.endTs);
+  const centerRaw = url.searchParams.get("center");
+  const center = centerRaw !== null ? Number(centerRaw) : null;
   const services = parseCsv(url.searchParams.get("services"));
   const levels = parseCsv(url.searchParams.get("levels"));
 
@@ -30,7 +32,29 @@ export async function GET(
   events.sort((a, b) => a.ts - b.ts || a.seq - b.seq);
 
   const total = events.length;
-  if (events.length > MAX_EVENTS) events = events.slice(0, MAX_EVENTS);
+  if (events.length > MAX_EVENTS) {
+    if (center !== null) {
+      // Keep the slice centered on the playhead so the current line is always
+      // present, even when a same-timestamp storm dominates the window.
+      let lo = 0;
+      let hi = events.length;
+      while (lo < hi) {
+        const m = (lo + hi) >> 1;
+        if (events[m].ts < center) lo = m + 1;
+        else hi = m;
+      }
+      let s = lo - Math.floor(MAX_EVENTS / 2);
+      if (s < 0) s = 0;
+      let e = s + MAX_EVENTS;
+      if (e > events.length) {
+        e = events.length;
+        s = e - MAX_EVENTS;
+      }
+      events = events.slice(s, e);
+    } else {
+      events = events.slice(0, MAX_EVENTS);
+    }
+  }
 
   const settings = await loadSettings();
   if (settings.maskPii) {

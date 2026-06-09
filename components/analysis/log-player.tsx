@@ -75,7 +75,8 @@ const LANE_COLORS = [
 ];
 
 const SPEEDS = [1, 5, 10, 50, 100];
-const WINDOW_MS = 5 * 60_000; // page size for verbatim fetches
+const WINDOW_MS = 5 * 60_000; // half-span of the verbatim fetch around the playhead
+const WINDOW_STEP_MS = 60_000; // re-key cadence: slides the window as playback advances
 const SILENCE_MS = 1500;
 const LANE_LIMIT = 8; // keep the scrubber readable; rest behind a toggle
 
@@ -244,21 +245,26 @@ export function LogPlayer({
     [levels],
   );
 
-  // ---- windowed verbatim fetch around the playhead ----
-  const windowStart = playhead !== null ? Math.floor(playhead / WINDOW_MS) * WINDOW_MS : 0;
-  const winFrom = windowStart - 30_000;
-  const winTo = windowStart + WINDOW_MS + 30_000;
+  // ---- verbatim fetch, centered on and following the playhead ----
+  // Re-key at a coarse cadence (WINDOW_STEP_MS) so playback slides the window
+  // without thrashing, while keeping the fetch centered on the playhead so the
+  // current line is always loaded — even amid a same-timestamp log storm.
+  const center = playhead ?? startTs;
+  const keyCenter = Math.round(center / WINDOW_STEP_MS) * WINDOW_STEP_MS;
+  const winFrom = keyCenter - WINDOW_MS;
+  const winTo = keyCenter + WINDOW_MS;
   const svcParam = [...visibleServices].sort().join(",");
   const lvlParam = activeLevels.join(",");
 
   const { data: win } = useQuery<{ events: LogEvent[]; total: number; capped: boolean }>({
-    queryKey: ["timeline-window", id, winFrom, winTo, svcParam, lvlParam],
+    queryKey: ["timeline-window", id, keyCenter, svcParam, lvlParam],
     enabled: playhead !== null && !!ov,
     placeholderData: (prev) => prev,
     queryFn: async () => {
       const u = new URLSearchParams({
         from: String(winFrom),
         to: String(winTo),
+        center: String(keyCenter),
         services: svcParam,
         levels: lvlParam,
       });
@@ -811,7 +817,7 @@ export function LogPlayer({
             <span className="ml-auto">
               {matches
                 ? `Найдено ${matches.length} совпадений`
-                : `${win?.total ?? windowEvents.length} событий в окне${win?.capped ? " (показаны первые)" : ""}`}
+                : `${win?.total ?? windowEvents.length} событий в окне${win?.capped ? " (показаны ближайшие к курсору)" : ""}`}
             </span>
             <button
               onClick={() => seek(endTs)}
