@@ -157,6 +157,7 @@ export function LogPlayer({
   version?: string | null;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
+  const timelineRef = useRef<HTMLDivElement>(null);
   const [showFilters, setShowFilters] = useState(true);
 
   // Full-range overview (stable lane order + chapters + activity distribution).
@@ -424,6 +425,26 @@ export function LogPlayer({
 
   const isZoomed = !!(view && ovFull && view.end - view.start < fullEnd - fullStart - 1);
 
+  // Wheel zoom only with Ctrl/Cmd held — otherwise the page scrolls normally.
+  // Attached natively as non-passive so we can preventDefault the browser zoom.
+  useEffect(() => {
+    const el = timelineRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return; // let the page scroll
+      e.preventDefault();
+      const now = performance.now();
+      if (now - wheelTsRef.current < 70) return;
+      wheelTsRef.current = now;
+      const rect = el.getBoundingClientRect();
+      const ratio = (e.clientX - rect.left) / rect.width;
+      const centerTs = startTs + Math.max(0, Math.min(1, ratio)) * span;
+      zoomAt(centerTs, e.deltaY > 0 ? 1 / 0.8 : 0.8);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [startTs, span, zoomAt]);
+
   const jumpError = useCallback(
     (dir: 1 | -1) => {
       if (!errorTimes.length || playhead === null) return;
@@ -680,16 +701,9 @@ export function LogPlayer({
             <ChapterRow chapters={ov.chapters} startTs={startTs} span={span} />
 
             <div
+              ref={timelineRef}
+              title="Ctrl + колесо — масштаб · перетаскивание — сдвиг · клик — перейти"
               className="relative mt-2 cursor-crosshair select-none overflow-hidden"
-              onWheel={(e) => {
-                const now = performance.now();
-                if (now - wheelTsRef.current < 70) return;
-                wheelTsRef.current = now;
-                const rect = e.currentTarget.getBoundingClientRect();
-                const ratio = (e.clientX - rect.left) / rect.width;
-                const centerTs = startTs + Math.max(0, Math.min(1, ratio)) * span;
-                zoomAt(centerTs, e.deltaY > 0 ? 1 / 0.8 : 0.8);
-              }}
               onPointerDown={(e) => {
                 const rect = e.currentTarget.getBoundingClientRect();
                 dragRef.current = { x: e.clientX, width: rect.width, moved: false };
