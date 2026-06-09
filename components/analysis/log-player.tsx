@@ -7,11 +7,15 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowDown,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Crosshair,
   Eye,
   EyeOff,
   Filter,
@@ -22,11 +26,14 @@ import {
   MessageSquare,
   Pause,
   Play,
+  Scan,
   Search,
   Settings,
   SkipBack,
   SkipForward,
   Sparkles,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
 import { apiPath } from "@/lib/utils";
 import type {
@@ -98,6 +105,50 @@ function levelKey(level: string): "ERROR" | "WARN" | "INFO" {
   return "INFO";
 }
 
+// Find the time window that contains the bulk of the activity, trimming sparse
+// outliers at the edges (so the default view focuses on where logs actually are).
+function computeFocus(o: Overview): { start: number; end: number } {
+  const full = { start: o.startTs, end: o.endTs };
+  const totals = o.agg.map((b) =>
+    b.reduce((s, sv) => s + sv[0] + sv[1] + sv[2], 0),
+  );
+  const total = totals.reduce((s, v) => s + v, 0);
+  if (total === 0) return full;
+  const span = Math.max(1, o.endTs - o.startTs);
+  const tsOf = (bucket: number) => o.startTs + (bucket / o.buckets) * span;
+
+  const loCut = total * 0.01;
+  const hiCut = total * 0.99;
+  let cum = 0;
+  let loB = 0;
+  let hiB = o.buckets - 1;
+  for (let i = 0; i < totals.length; i++) {
+    cum += totals[i];
+    if (cum >= loCut) {
+      loB = i;
+      break;
+    }
+  }
+  cum = 0;
+  for (let i = 0; i < totals.length; i++) {
+    cum += totals[i];
+    if (cum >= hiCut) {
+      hiB = i;
+      break;
+    }
+  }
+  const pad = span * 0.02;
+  let start = Math.max(o.startTs, tsOf(loB) - pad);
+  let end = Math.min(o.endTs, tsOf(hiB + 1) + pad);
+  if (end - start < 5000) {
+    // Degenerate (everything in one instant) — fall back to a small window.
+    const mid = (start + end) / 2;
+    start = Math.max(o.startTs, mid - 2500);
+    end = Math.min(o.endTs, mid + 2500);
+  }
+  return { start, end };
+}
+
 export function LogPlayer({
   id,
   title,
@@ -110,7 +161,8 @@ export function LogPlayer({
   const rootRef = useRef<HTMLDivElement>(null);
   const [showFilters, setShowFilters] = useState(true);
 
-  const { data: ov, isLoading } = useQuery<Overview>({
+  // Full-range overview (stable lane order + chapters + activity distribution).
+  const { data: ovFull, isLoading } = useQuery<Overview>({
     queryKey: ["timeline-overview", id],
     queryFn: async () => {
       const res = await fetch(apiPath(`/api/analyses/${id}/timeline/overview`));
@@ -118,6 +170,32 @@ export function LogPlayer({
       return res.json();
     },
   });
+
+  // Current zoom window. Defaults to the active range once the overview loads.
+  const [view, setView] = useState<{ start: number; end: number } | null>(null);
+  useEffect(() => {
+    if (ovFull && !view) setView(computeFocus(ovFull));
+  }, [ovFull, view]);
+
+  // Re-aggregated overview for the current zoom window (crisp oscilloscope).
+  const { data: ovView } = useQuery<Overview>({
+    queryKey: ["timeline-overview-view", id, view?.start, view?.end],
+    enabled: !!ovFull && !!view,
+    placeholderData: (prev) => prev,
+    queryFn: async () => {
+      const u = new URLSearchParams({
+        from: String(view!.start),
+        to: String(view!.end),
+        buckets: "240",
+      });
+      const res = await fetch(apiPath(`/api/analyses/${id}/timeline/overview?${u}`));
+      if (!res.ok) throw new Error("view overview failed");
+      return res.json();
+    },
+  });
+
+  // Active overview used for rendering (zoomed when available).
+  const ov = ovView ?? ovFull;
 
   // ---- player state ----
   const [playhead, setPlayhead] = useState<number | null>(null);
@@ -146,13 +224,16 @@ export function LogPlayer({
   const [matches, setMatches] = useState<TimelineMatch[] | null>(null);
   const [searching, setSearching] = useState(false);
 
+  // Rendered (view) range; full range is used for zoom clamping / "fit".
   const startTs = ov?.startTs ?? 0;
   const endTs = ov?.endTs ?? 0;
   const span = Math.max(1, endTs - startTs);
+  const fullStart = ovFull?.startTs ?? 0;
+  const fullEnd = ovFull?.endTs ?? 0;
 
   useEffect(() => {
-    if (ov && playhead === null) setPlayhead(ov.startTs);
-  }, [ov, playhead]);
+    if (view && playhead === null) setPlayhead(view.start);
+  }, [view, playhead]);
 
   // Visible services = lanes that aren't muted; solo overrides mute.
   const visibleServices = useMemo(() => {
@@ -195,11 +276,11 @@ export function LogPlayer({
   // All ERROR positions (for prev/next-error transport + default ticks).
   const { data: errMarks } = useQuery<{ events: LogEvent[] }>({
     queryKey: ["timeline-errors", id],
-    enabled: !!ov,
+    enabled: !!ovFull,
     queryFn: async () => {
       const u = new URLSearchParams({
-        from: String(ov!.startTs),
-        to: String(ov!.endTs),
+        from: String(ovFull!.startTs),
+        to: String(ovFull!.endTs),
         levels: "ERROR",
       });
       const res = await fetch(apiPath(`/api/analyses/${id}/timeline/window?${u}`));
@@ -279,6 +360,66 @@ export function LogPlayer({
     phRef.current = ts;
     setPlayhead(ts);
   }, []);
+
+  // ---- zoom / pan ----
+  const setViewClamped = useCallback(
+    (start: number, end: number) => {
+      if (!ovFull) return;
+      const minSpan = 1000; // 1s floor
+      let s = start;
+      let e = end;
+      if (e - s < minSpan) e = s + minSpan;
+      if (s < fullStart) {
+        e += fullStart - s;
+        s = fullStart;
+      }
+      if (e > fullEnd) {
+        s -= e - fullEnd;
+        e = fullEnd;
+      }
+      s = Math.max(fullStart, s);
+      e = Math.min(fullEnd, e);
+      setView({ start: s, end: e });
+    },
+    [ovFull, fullStart, fullEnd],
+  );
+
+  const zoomAt = useCallback(
+    (centerTs: number, factor: number) => {
+      if (!view) return;
+      const curSpan = view.end - view.start;
+      const maxSpan = fullEnd - fullStart;
+      let ns = curSpan * factor;
+      ns = Math.min(maxSpan, Math.max(1000, ns));
+      const ratio = curSpan > 0 ? (centerTs - view.start) / curSpan : 0.5;
+      setViewClamped(centerTs - ratio * ns, centerTs - ratio * ns + ns);
+    },
+    [view, fullStart, fullEnd, setViewClamped],
+  );
+
+  const fitActivity = useCallback(() => {
+    if (ovFull) setViewClamped(computeFocus(ovFull).start, computeFocus(ovFull).end);
+  }, [ovFull, setViewClamped]);
+
+  const fitFull = useCallback(() => {
+    if (ovFull) setView({ start: ovFull.startTs, end: ovFull.endTs });
+  }, [ovFull]);
+
+  const panBy = useCallback(
+    (fraction: number) => {
+      if (!view) return;
+      const d = (view.end - view.start) * fraction;
+      setViewClamped(view.start + d, view.end + d);
+    },
+    [view, setViewClamped],
+  );
+
+  // Live drag-pan: translate the timeline content, commit the new view on release.
+  const [panPx, setPanPx] = useState(0);
+  const dragRef = useRef<{ x: number; width: number; moved: boolean } | null>(null);
+  const wheelTsRef = useRef(0);
+
+  const isZoomed = !!(view && ovFull && view.end - view.start < fullEnd - fullStart - 1);
 
   const jumpError = useCallback(
     (dir: 1 | -1) => {
@@ -503,16 +644,74 @@ export function LogPlayer({
 
           {/* Timeline */}
           <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3">
+            {/* Zoom toolbar */}
+            <div className="mb-2 flex items-center gap-1 text-[var(--muted)]">
+              <span className="mr-auto text-xs">
+                {fmtClock(startTs)} – {fmtClock(endTs)}
+                {isZoomed && (
+                  <span className="ml-2 text-[var(--primary)]">увеличено</span>
+                )}
+              </span>
+              <ZoomBtn title="Влево" onClick={() => panBy(-0.25)}>
+                <ChevronLeft className="h-4 w-4" />
+              </ZoomBtn>
+              <ZoomBtn title="Уменьшить" onClick={() => zoomAt((startTs + endTs) / 2, 1 / 0.6)}>
+                <ZoomOut className="h-4 w-4" />
+              </ZoomBtn>
+              <ZoomBtn title="Увеличить" onClick={() => zoomAt((startTs + endTs) / 2, 0.6)}>
+                <ZoomIn className="h-4 w-4" />
+              </ZoomBtn>
+              <ZoomBtn title="Вправо" onClick={() => panBy(0.25)}>
+                <ChevronRight className="h-4 w-4" />
+              </ZoomBtn>
+              <ZoomBtn title="К активности" onClick={fitActivity}>
+                <Crosshair className="h-4 w-4" />
+              </ZoomBtn>
+              <ZoomBtn title="Весь период" onClick={fitFull}>
+                <Scan className="h-4 w-4" />
+              </ZoomBtn>
+            </div>
+
             <ChapterRow chapters={ov.chapters} startTs={startTs} span={span} />
 
             <div
-              className="relative mt-2 cursor-pointer select-none"
+              className="relative mt-2 cursor-crosshair select-none overflow-hidden"
+              onWheel={(e) => {
+                const now = performance.now();
+                if (now - wheelTsRef.current < 70) return;
+                wheelTsRef.current = now;
+                const rect = e.currentTarget.getBoundingClientRect();
+                const ratio = (e.clientX - rect.left) / rect.width;
+                const centerTs = startTs + Math.max(0, Math.min(1, ratio)) * span;
+                zoomAt(centerTs, e.deltaY > 0 ? 1 / 0.8 : 0.8);
+              }}
               onPointerDown={(e) => {
                 const rect = e.currentTarget.getBoundingClientRect();
-                const x = (e.clientX - rect.left) / rect.width;
-                seek(startTs + Math.max(0, Math.min(1, x)) * span);
+                dragRef.current = { x: e.clientX, width: rect.width, moved: false };
+                e.currentTarget.setPointerCapture(e.pointerId);
+              }}
+              onPointerMove={(e) => {
+                const d = dragRef.current;
+                if (!d) return;
+                const dx = e.clientX - d.x;
+                if (Math.abs(dx) > 3) d.moved = true;
+                if (d.moved) setPanPx(dx);
+              }}
+              onPointerUp={(e) => {
+                const d = dragRef.current;
+                dragRef.current = null;
+                const rect = e.currentTarget.getBoundingClientRect();
+                if (d?.moved) {
+                  const deltaTs = -(panPx / d.width) * span;
+                  setViewClamped(startTs + deltaTs, endTs + deltaTs);
+                  setPanPx(0);
+                } else {
+                  const x = (e.clientX - rect.left) / rect.width;
+                  seek(startTs + Math.max(0, Math.min(1, x)) * span);
+                }
               }}
             >
+              <div style={{ transform: panPx ? `translateX(${panPx}px)` : undefined }}>
               <LaneStack
                 lanes={laneServices.filter(({ s }) => visibleServices.has(s))}
                 agg={ov.agg}
@@ -521,15 +720,17 @@ export function LogPlayer({
                 levels={levels}
               />
 
-              {/* Search / error tick marks */}
+              {/* Search / error tick marks (only those inside the view) */}
               <div className="pointer-events-none absolute inset-0">
-                {tickTimes.map((t, i) => (
-                  <span
-                    key={i}
-                    className="absolute top-0 h-full w-px bg-white/70"
-                    style={{ left: `${((t - startTs) / span) * 100}%` }}
-                  />
-                ))}
+                {tickTimes
+                  .filter((t) => t >= startTs && t <= endTs)
+                  .map((t, i) => (
+                    <span
+                      key={i}
+                      className="absolute top-0 h-full w-px bg-white/70"
+                      style={{ left: `${((t - startTs) / span) * 100}%` }}
+                    />
+                  ))}
               </div>
 
               {/* Playhead */}
@@ -538,6 +739,7 @@ export function LogPlayer({
                 style={{ left: `${phPct}%` }}
               >
                 <span className="absolute -left-[7px] -top-1.5 h-4 w-4 rounded-full border-2 border-[var(--background)] bg-[var(--primary)]" />
+              </div>
               </div>
             </div>
 
@@ -951,6 +1153,26 @@ function AiPanel({
         <MessageSquare className="h-4 w-4" /> Объяснить окно
       </button>
     </aside>
+  );
+}
+
+function ZoomBtn({
+  title,
+  onClick,
+  children,
+}: {
+  title: string;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      title={title}
+      onClick={onClick}
+      className="rounded-md border border-[var(--border)] bg-[var(--surface-2)] p-1.5 text-[var(--muted)] hover:text-[var(--foreground)]"
+    >
+      {children}
+    </button>
   );
 }
 

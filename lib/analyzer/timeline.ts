@@ -215,6 +215,46 @@ export async function loadSemanticIndex(id: string): Promise<SemanticIndex | nul
   }
 }
 
+// Re-aggregate per-bucket activity over an arbitrary [from, to] sub-range,
+// reading only the shards that overlap it. Used to render a crisp oscilloscope
+// at any zoom level (the manifest's agg is fixed over the full data range).
+// Returns agg[bucket][serviceIndex] = [err, warn, other].
+export async function aggregateRange(
+  id: string,
+  manifest: TimelineManifest,
+  from: number,
+  to: number,
+  buckets: number,
+): Promise<{ agg: number[][][]; total: number }> {
+  const services = manifest.services;
+  const idx = new Map(services.map((s, i) => [s, i]));
+  const span = Math.max(1, to - from);
+  const agg: number[][][] = Array.from({ length: buckets }, () =>
+    Array.from({ length: services.length }, () => [0, 0, 0]),
+  );
+  let total = 0;
+  for (let i = 0; i < manifest.shards.length; i++) {
+    const s = manifest.shards[i];
+    if (s.end < from || s.start > to) continue;
+    const events = await loadShard(id, i).catch(() => [] as LogEvent[]);
+    for (const e of events) {
+      if (e.ts < from || e.ts > to) continue;
+      const b = Math.min(buckets - 1, Math.floor(((e.ts - from) / span) * buckets));
+      const si = idx.get(e.service);
+      if (si === undefined) continue;
+      const li =
+        e.level === "ERROR" || e.level === "FATAL"
+          ? 0
+          : e.level === "WARN" || e.level === "WARNING"
+            ? 1
+            : 2;
+      agg[b][si][li]++;
+      total++;
+    }
+  }
+  return { agg, total };
+}
+
 // Load every event between [from, to] (inclusive) by pulling only the shards
 // whose time range overlaps the window.
 export async function loadWindowEvents(
