@@ -17,6 +17,7 @@ import {
   stageLlm,
   type PipelineOptions,
 } from "../lib/analyzer/pipeline";
+import { buildTimeline } from "../lib/analyzer/timeline";
 import { stageIndex, type StageKey } from "../lib/analyzer/stages";
 import type {
   ParseCheckpoint,
@@ -101,9 +102,12 @@ async function processJob(data: AnalysisJobData) {
     let rules: RulesCheckpoint;
     let retrieval: RetrievalCheckpoint;
 
-    // Stages extract + parse depend on the actual files; run them whenever the
-    // restart point is at or before "parse", otherwise reload the checkpoint.
-    if (startIdx <= stageIndex("parse")) {
+    // The extracted files are needed by both parse and timeline; extract once
+    // whenever the restart point is at or before "timeline".
+    const needFiles = startIdx <= stageIndex("timeline");
+    let reportDir: string | null = null;
+
+    if (needFiles) {
       await guardCancel(analysisId);
       await setProgress(analysisId, "Загрузка из хранилища", 2);
       await downloadToFile(storageKey, archivePath);
@@ -111,19 +115,38 @@ async function processJob(data: AnalysisJobData) {
       await guardCancel(analysisId);
       await setProgress(analysisId, "Распаковка архива", 10);
       await extractBundle(archivePath, extractDir);
-      const reportDir = (await findReportDir(extractDir)) ?? extractDir;
+      reportDir = (await findReportDir(extractDir)) ?? extractDir;
+    }
 
+    // Stages extract + parse depend on the actual files; run them whenever the
+    // restart point is at or before "parse", otherwise reload the checkpoint.
+    if (startIdx <= stageIndex("parse")) {
       await setProgress(analysisId, "Парсинг логов", 18);
       parse = await stageParse(
-        reportDir,
+        reportDir!,
         opts,
-        (pct) => void setProgress(analysisId, "Парсинг логов", 18 + Math.round(pct * 0.39)),
+        (pct) => void setProgress(analysisId, "Парсинг логов", 18 + Math.round(pct * 0.18)),
         () => guardCancel(analysisId),
       );
       await putJson(ckptKey(analysisId, "parse"), parse);
       await markStageAvailable(analysisId, "parse");
     } else {
       parse = await getJson<ParseCheckpoint>(ckptKey(analysisId, "parse"));
+    }
+
+    // Stage timeline (log player): merge all logs into a time-ordered stream
+    // and persist shards + overview. Best-effort — never fails the analysis.
+    if (startIdx <= stageIndex("timeline") && reportDir) {
+      await guardCancel(analysisId);
+      await setProgress(analysisId, "Сборка ленты событий", 40);
+      try {
+        await buildTimeline(reportDir, analysisId, {
+          embed: { apiKey: settings.llmApiKey },
+        });
+        await markStageAvailable(analysisId, "timeline");
+      } catch (err) {
+        console.error(`Timeline build failed for ${analysisId}:`, err);
+      }
     }
 
     if (startIdx <= stageIndex("rules")) {

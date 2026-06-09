@@ -8,6 +8,7 @@ import { ArrowLeft, Loader2, OctagonX, Trash2 } from "lucide-react";
 import { ProcessingView } from "@/components/analysis/processing-view";
 import { ReportView } from "@/components/analysis/report-view";
 import { RestartControls } from "@/components/analysis/restart-controls";
+import { LogPlayer } from "@/components/analysis/log-player";
 import { Button, Card } from "@/components/ui";
 import { apiPath } from "@/lib/utils";
 import type { AnalysisReport } from "@/lib/analyzer/types";
@@ -32,6 +33,7 @@ export default function AnalysisPage({
   const router = useRouter();
   const [refetchKey, setRefetchKey] = useState(0);
   const [deleting, setDeleting] = useState(false);
+  const [tab, setTab] = useState<"report" | "player">("report");
 
   const { data, isLoading, refetch } = useQuery<AnalysisRow>({
     queryKey: ["analysis", id, refetchKey],
@@ -117,7 +119,41 @@ export default function AnalysisPage({
       )}
 
       {data && data.status === "done" && data.report && (
-        <ReportView id={id} report={data.report} />
+        <>
+          {(data.availableStages ?? []).includes("timeline") && (
+            <div className="flex items-center gap-1 border-b border-[var(--border)]">
+              <button
+                onClick={() => setTab("report")}
+                className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
+                  tab === "report"
+                    ? "border-[var(--primary)] text-[var(--foreground)]"
+                    : "border-transparent text-[var(--muted)] hover:text-[var(--foreground)]"
+                }`}
+              >
+                Отчёт
+              </button>
+              <button
+                onClick={() => setTab("player")}
+                className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
+                  tab === "player"
+                    ? "border-[var(--primary)] text-[var(--foreground)]"
+                    : "border-transparent text-[var(--muted)] hover:text-[var(--foreground)]"
+                }`}
+              >
+                Проигрыватель логов
+              </button>
+            </div>
+          )}
+          {tab === "report" ? (
+            <ReportView id={id} report={data.report} />
+          ) : (
+            <LogPlayer
+              id={id}
+              title={`Проигрыватель логов — ${data.filename}`}
+              version={data.report.profile.version}
+            />
+          )}
+        </>
       )}
 
       {data &&

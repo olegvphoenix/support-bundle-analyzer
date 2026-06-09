@@ -39,9 +39,14 @@ export async function DELETE(
       deleteObject(`${row.storageKey}.info`).catch(() => {}),
     ]);
   }
-  await deletePrefix(`checkpoints/${id}/`).catch((e) =>
-    console.warn(`Failed to delete checkpoints for ${id}:`, e),
-  );
+  await Promise.all([
+    deletePrefix(`checkpoints/${id}/`).catch((e) =>
+      console.warn(`Failed to delete checkpoints for ${id}:`, e),
+    ),
+    deletePrefix(`timeline/${id}/`).catch((e) =>
+      console.warn(`Failed to delete timeline for ${id}:`, e),
+    ),
+  ]);
 
   await db.delete(analyses).where(eq(analyses.id, id));
   return NextResponse.json({ ok: true });

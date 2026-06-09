@@ -234,3 +234,61 @@ export interface AnalysisReport {
   };
   createdAt: string;
 }
+
+// ---------------------------------------------------------------------------
+// Log player (timeline) — a unified, time-ordered event stream across all
+// service logs, with an aggregate overview for the scrubber and on-demand
+// windows for verbatim playback. See lib/analyzer/timeline.ts.
+// ---------------------------------------------------------------------------
+
+// A single normalized event in the merged stream.
+export interface LogEvent {
+  seq: number; // global order index (tie-breaker for equal timestamps)
+  ts: number; // epoch ms
+  tsText: string; // "15:48:27.155" (sub-second precision for the console)
+  service: string; // lane: "Ipint", "NGP_Host_Service", ...
+  thread: string | null;
+  level: string; // ERROR | WARN | INFO | DEBUG | FATAL ...
+  component: string | null;
+  message: string;
+}
+
+export type ChapterKind = "restart" | "storm" | "entity" | "ai";
+
+// A marker on the timeline (a "chapter" in the player).
+export interface TimelineChapter {
+  ts: number;
+  label: string;
+  kind: ChapterKind;
+  service?: string;
+}
+
+// Per-bucket activity counts for the scrubber oscilloscope. levels order is
+// [ERROR, WARN, OTHER]; agg[bucket][serviceIndex] = [err, warn, other].
+export interface TimelineOverview {
+  startTs: number;
+  endTs: number;
+  totalEvents: number;
+  truncated: boolean;
+  services: string[]; // lane order
+  buckets: number;
+  agg: number[][][];
+  chapters: TimelineChapter[];
+}
+
+// Persisted manifest (overview + shard layout) for an analysis timeline.
+export interface TimelineManifest extends TimelineOverview {
+  shards: { start: number; end: number; count: number }[];
+  hasEmbeddings: boolean;
+}
+
+export type SearchMode = "keyword" | "regex" | "semantic";
+
+export interface TimelineMatch {
+  ts: number;
+  seq: number;
+  service: string;
+  level: string;
+  snippet: string;
+  score?: number; // semantic similarity, when applicable
+}

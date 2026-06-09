@@ -5,6 +5,7 @@
 export const STAGES = [
   { key: "extract", label: "Распаковка", progress: 2 },
   { key: "parse", label: "Парсинг логов", progress: 18 },
+  { key: "timeline", label: "Лента событий", progress: 40 },
   { key: "rules", label: "Правила", progress: 57 },
   { key: "retrieval", label: "Ретривал (Lexiro)", progress: 69 },
   { key: "llm", label: "LLM-анализ", progress: 80 },
@@ -30,6 +31,8 @@ export function canRestartFrom(key: StageKey, available: string[]): boolean {
   switch (key) {
     case "extract":
     case "parse":
+    case "timeline":
+      // timeline re-reads the extracted log files, like parse.
       return true;
     case "rules":
       return available.includes("parse");
