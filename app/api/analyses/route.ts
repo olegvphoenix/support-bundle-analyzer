@@ -30,6 +30,7 @@ export async function GET(req: Request) {
       host: analyses.host,
       healthScore: analyses.healthScore,
       problemCount: analyses.problemCount,
+      availableStages: analyses.availableStages,
       createdAt: analyses.createdAt,
     })
     .from(analyses)

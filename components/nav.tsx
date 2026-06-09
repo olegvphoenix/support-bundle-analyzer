@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { Activity, BarChart3, History, Settings, Upload } from "lucide-react";
+import { Activity, BarChart3, History, PlayCircle, Settings, Upload } from "lucide-react";
 import { cn, apiPath } from "@/lib/utils";
 
 interface AnalysisRow {
@@ -76,6 +76,12 @@ export function Nav({ width }: { width?: number }) {
           label="Анализы"
           icon={BarChart3}
           active={pathname.startsWith("/analysis")}
+        />
+        <NavItem
+          href="/player"
+          label="Проигрыватель логов"
+          icon={PlayCircle}
+          active={pathname.startsWith("/player")}
         />
         <NavItem
           href="/history"
