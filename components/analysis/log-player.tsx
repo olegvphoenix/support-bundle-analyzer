@@ -269,6 +269,12 @@ export function LogPlayer({
     }
   }, [query, mode, id]);
 
+  // Re-run an existing search when the mode changes so the pill stays in sync.
+  useEffect(() => {
+    if (matches !== null && query.trim()) runSearch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
+
   const seek = useCallback((ts: number) => {
     phRef.current = ts;
     setPlayhead(ts);
@@ -462,22 +468,30 @@ export function LogPlayer({
 
         {/* Center column */}
         <div className="min-w-0 flex-1 p-4">
-          {/* Search row */}
-          <div className="mb-3 flex items-center gap-2">
-            <div className="relative flex-1">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--muted)]" />
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && runSearch()}
-                placeholder="Поиск по логам…"
-                className="input pl-9"
-              />
-            </div>
+          {/* Search row — single integrated bar (matches the mockup) */}
+          <div className="mb-3 flex items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] py-1.5 pl-3 pr-2 transition-colors focus-within:border-[var(--primary)]">
+            <Search className="h-4 w-4 shrink-0 text-[var(--muted)]" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && runSearch()}
+              placeholder="Поиск по логам…"
+              className="min-w-0 flex-1 bg-transparent text-sm text-[var(--foreground)] outline-none placeholder:text-[var(--muted)]"
+            />
+            {(searching || matches !== null) && (
+              <span className="inline-flex shrink-0 items-center gap-1 rounded-md bg-[var(--primary)]/15 px-2.5 py-1 text-xs font-medium text-[var(--primary)]">
+                {searching ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  `${matches!.length} совпадений`
+                )}
+              </span>
+            )}
+            <span className="h-5 w-px shrink-0 bg-[var(--border)]" />
             <select
               value={mode}
               onChange={(e) => setMode(e.target.value as SearchMode)}
-              className="input w-44"
+              className="shrink-0 cursor-pointer bg-transparent pr-1 text-sm text-[var(--foreground)] outline-none"
             >
               <option value="keyword">Подстрока</option>
               <option value="regex">Regex</option>
@@ -485,18 +499,6 @@ export function LogPlayer({
                 Семантический
               </option>
             </select>
-            <button
-              onClick={runSearch}
-              className="whitespace-nowrap rounded-md bg-[var(--surface-2)] px-3 py-2 text-sm text-[var(--primary)] hover:bg-[var(--border)]"
-            >
-              {searching ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : matches ? (
-                `${matches.length} совпадений`
-              ) : (
-                "Найти"
-              )}
-            </button>
           </div>
 
           {/* Timeline */}
@@ -512,11 +514,10 @@ export function LogPlayer({
               }}
             >
               <LaneStack
-                lanes={laneServices}
+                lanes={laneServices.filter(({ s }) => visibleServices.has(s))}
                 agg={ov.agg}
                 buckets={ov.buckets}
                 colorOf={colorOf}
-                visible={visibleServices}
                 levels={levels}
               />
 
@@ -634,39 +635,40 @@ const LaneStack = memo(function LaneStack({
   agg,
   buckets,
   colorOf,
-  visible,
   levels,
 }: {
   lanes: { s: string; i: number }[];
   agg: number[][][];
   buckets: number;
   colorOf: (s: string) => string;
-  visible: Set<string>;
   levels: { ERROR: boolean; WARN: boolean; INFO: boolean };
 }) {
+  if (lanes.length === 0) {
+    return (
+      <div className="flex h-24 items-center justify-center text-xs text-[var(--muted)]">
+        Все сервисы скрыты — включите их в фильтрах слева.
+      </div>
+    );
+  }
   return (
     <div className="space-y-1.5">
-      {lanes.map(({ s, i }) => {
-        const dim = !visible.has(s);
-        return (
-          <div key={s} className="flex items-center gap-2">
-            <div
-              className={`w-28 shrink-0 truncate text-right text-xs ${dim ? "text-[var(--muted)]/50" : "text-[var(--muted)]"}`}
-              title={s}
-            >
-              {s}
-            </div>
-            <Lane
-              agg={agg}
-              serviceIndex={i}
-              buckets={buckets}
-              color={colorOf(s)}
-              dim={dim}
-              levels={levels}
-            />
+      {lanes.map(({ s, i }) => (
+        <div key={s} className="flex items-center gap-2">
+          <div
+            className="w-28 shrink-0 truncate text-right text-xs text-[var(--muted)]"
+            title={s}
+          >
+            {s}
           </div>
-        );
-      })}
+          <Lane
+            agg={agg}
+            serviceIndex={i}
+            buckets={buckets}
+            color={colorOf(s)}
+            levels={levels}
+          />
+        </div>
+      ))}
     </div>
   );
 });
@@ -677,14 +679,12 @@ const Lane = memo(function Lane({
   serviceIndex,
   buckets,
   color,
-  dim,
   levels,
 }: {
   agg: number[][][];
   serviceIndex: number;
   buckets: number;
   color: string;
-  dim: boolean;
   levels: { ERROR: boolean; WARN: boolean; INFO: boolean };
 }) {
   let max = 1;
@@ -715,7 +715,7 @@ const Lane = memo(function Lane({
               height: `${h}%`,
               minWidth: 0,
               background: cell.c,
-              opacity: dim ? 0.2 : cell.h > 0 ? 0.95 : 0,
+              opacity: cell.h > 0 ? 0.95 : 0,
             }}
           />
         );
@@ -723,6 +723,8 @@ const Lane = memo(function Lane({
     </div>
   );
 });
+
+const CHAPTER_MIN_GAP = 13; // percent of width before labels are stacked
 
 function ChapterRow({
   chapters,
@@ -739,24 +741,44 @@ function ChapterRow({
     entity: "var(--sev-warning)",
     ai: "var(--primary)",
   };
+
+  // Place each marker on one of two rows so nearby labels don't overlap, and
+  // anchor labels away from the edges so they don't overflow the timeline.
+  const rowLast = [-Infinity, -Infinity];
+  const placed = chapters
+    .map((c) => ({ c, pct: ((c.ts - startTs) / span) * 100 }))
+    .sort((a, b) => a.pct - b.pct)
+    .map(({ c, pct }) => {
+      let row = pct - rowLast[0] < CHAPTER_MIN_GAP ? 1 : 0;
+      if (row === 1 && pct - rowLast[1] < CHAPTER_MIN_GAP) {
+        row = rowLast[0] <= rowLast[1] ? 0 : 1;
+      }
+      rowLast[row] = pct;
+      return { c, pct, row };
+    });
+
   return (
-    <div className="relative ml-[120px] h-6">
-      {chapters.map((c, i) => (
-        <div
-          key={i}
-          className="absolute flex -translate-x-1/2 items-center gap-1 whitespace-nowrap text-[11px] text-[var(--muted)]"
-          style={{ left: `${((c.ts - startTs) / span) * 100}%` }}
-        >
-          <svg viewBox="0 0 24 24" className="h-3 w-3" style={{ color: flagColor[c.kind] }}>
-            <path
-              fill="currentColor"
-              d="M5 3a1 1 0 0 1 1-1h0a1 1 0 0 1 1 1v18a1 1 0 1 1-2 0V3Z"
-            />
-            <path fill="currentColor" d="M7 3h11l-3 4 3 4H7V3Z" />
-          </svg>
-          {c.label}
-        </div>
-      ))}
+    <div className="relative ml-[120px] h-9">
+      {placed.map(({ c, pct, row }, i) => {
+        const transform =
+          pct > 85 ? "translateX(-100%)" : pct < 6 ? "translateX(0)" : "translateX(-50%)";
+        return (
+          <div
+            key={i}
+            className="absolute flex items-center gap-1 whitespace-nowrap text-[11px] text-[var(--muted)]"
+            style={{ left: `${pct}%`, top: row * 17, transform }}
+          >
+            <svg viewBox="0 0 24 24" className="h-3 w-3 shrink-0" style={{ color: flagColor[c.kind] }}>
+              <path
+                fill="currentColor"
+                d="M5 3a1 1 0 0 1 1-1h0a1 1 0 0 1 1 1v18a1 1 0 1 1-2 0V3Z"
+              />
+              <path fill="currentColor" d="M7 3h11l-3 4 3 4H7V3Z" />
+            </svg>
+            {c.label}
+          </div>
+        );
+      })}
     </div>
   );
 }
