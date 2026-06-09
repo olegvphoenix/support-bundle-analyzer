@@ -70,6 +70,7 @@ const LANE_COLORS = [
 const SPEEDS = [1, 5, 10, 50, 100];
 const WINDOW_MS = 5 * 60_000; // page size for verbatim fetches
 const SILENCE_MS = 1500;
+const LANE_LIMIT = 8; // keep the scrubber readable; rest behind a toggle
 
 const LEVEL_COLOR: Record<string, string> = {
   ERROR: "var(--sev-critical)",
@@ -129,6 +130,15 @@ export function LogPlayer({
   const [muted, setMuted] = useState<Set<string>>(new Set());
   const [solo, setSolo] = useState<Set<string>>(new Set());
   const [levels, setLevels] = useState({ ERROR: true, WARN: true, INFO: false });
+  const [showAllLanes, setShowAllLanes] = useState(false);
+
+  // Services are activity-sorted by the builder; only show the busiest lanes by
+  // default so the scrubber matches the design instead of a wall of thin rows.
+  const laneServices = useMemo(() => {
+    const all = ov ? ov.services.map((s, i) => ({ s, i })) : [];
+    return showAllLanes ? all : all.slice(0, LANE_LIMIT);
+  }, [ov, showAllLanes]);
+  const hiddenLaneCount = ov ? Math.max(0, ov.services.length - LANE_LIMIT) : 0;
 
   // ---- search ----
   const [query, setQuery] = useState("");
@@ -365,7 +375,7 @@ export function LogPlayer({
                 Сервисы
               </div>
               <div className="space-y-1">
-                {ov.services.map((s) => {
+                {laneServices.map(({ s }) => {
                   const isMuted = muted.has(s) && !solo.has(s);
                   const isSolo = solo.has(s);
                   return (
@@ -416,6 +426,14 @@ export function LogPlayer({
                     </div>
                   );
                 })}
+                {hiddenLaneCount > 0 && (
+                  <button
+                    onClick={() => setShowAllLanes((v) => !v)}
+                    className="px-1.5 py-1 text-xs text-[var(--primary)] hover:underline"
+                  >
+                    {showAllLanes ? "Свернуть" : `Показать все (${hiddenLaneCount})`}
+                  </button>
+                )}
               </div>
             </div>
 
@@ -494,7 +512,9 @@ export function LogPlayer({
               }}
             >
               <LaneStack
-                ov={ov}
+                lanes={laneServices}
+                agg={ov.agg}
+                buckets={ov.buckets}
                 colorOf={colorOf}
                 visible={visibleServices}
                 levels={levels}
@@ -610,19 +630,23 @@ export function LogPlayer({
 // ---------------------------------------------------------------------------
 
 const LaneStack = memo(function LaneStack({
-  ov,
+  lanes,
+  agg,
+  buckets,
   colorOf,
   visible,
   levels,
 }: {
-  ov: Overview;
+  lanes: { s: string; i: number }[];
+  agg: number[][][];
+  buckets: number;
   colorOf: (s: string) => string;
   visible: Set<string>;
   levels: { ERROR: boolean; WARN: boolean; INFO: boolean };
 }) {
   return (
-    <div className="space-y-1">
-      {ov.services.map((s, si) => {
+    <div className="space-y-1.5">
+      {lanes.map(({ s, i }) => {
         const dim = !visible.has(s);
         return (
           <div key={s} className="flex items-center gap-2">
@@ -633,9 +657,9 @@ const LaneStack = memo(function LaneStack({
               {s}
             </div>
             <Lane
-              agg={ov.agg}
-              serviceIndex={si}
-              buckets={ov.buckets}
+              agg={agg}
+              serviceIndex={i}
+              buckets={buckets}
               color={colorOf(s)}
               dim={dim}
               levels={levels}
@@ -677,19 +701,21 @@ const Lane = memo(function Lane({
   }
   const logMax = Math.log1p(max);
   return (
-    <div className="flex h-9 flex-1 items-center gap-px overflow-hidden rounded bg-[var(--surface-2)]/40 px-px">
+    <div className="relative flex h-11 flex-1 items-center gap-px overflow-hidden rounded bg-[var(--surface-2)]/40 px-px">
+      {/* Resting baseline so quiet lanes still read as an oscilloscope track. */}
+      <span className="pointer-events-none absolute left-0 right-0 top-1/2 h-px bg-[var(--border)]" />
       {cells.map((cell, i) => {
         const ratio = cell.h > 0 ? Math.log1p(cell.h) / logMax : 0;
-        const h = Math.max(cell.h > 0 ? 8 : 0, ratio * 100);
+        const h = cell.h > 0 ? Math.max(14, ratio * 100) : 0;
         return (
           <span
             key={i}
-            className="flex-1 rounded-[1px]"
+            className="relative z-[1] flex-1 rounded-[1px]"
             style={{
               height: `${h}%`,
               minWidth: 0,
               background: cell.c,
-              opacity: dim ? 0.18 : cell.h > 0 ? 0.9 : 0,
+              opacity: dim ? 0.2 : cell.h > 0 ? 0.95 : 0,
             }}
           />
         );
