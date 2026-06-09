@@ -862,7 +862,8 @@ const LaneStack = memo(function LaneStack({
       {lanes.map(({ s, i }) => (
         <div key={s} className="flex items-center gap-2">
           <div
-            className="w-28 shrink-0 truncate text-right text-xs text-[var(--muted)]"
+            className="w-28 shrink-0 truncate text-right text-xs font-medium"
+            style={{ color: colorOf(s) }}
             title={s}
           >
             {s}
